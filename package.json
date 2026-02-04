@@ -4,17 +4,17 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "install:all": "concurrently \"npm install\" \"cd edit-server && npm install\"",
+    "install:all": "concurrently \"npm install\" \"cd edit-server && npm install && npm audit fix\"",
     "dev": "astro dev",
-    "edit-server": "node server/save-server.js",
+    "edit-server": "node edit-server/save-server.js",
     "dev:edit": "concurrently \"npm run dev\" \"npm run edit-server\"",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/mdx": "^4.3.0",
-    "astro": "^5.10.1"
+    "@astrojs/mdx": "^4.3.13",
+    "astro": "^5.17.1"
   },
   "devDependencies": {
     "@parcel/watcher": "^2.5.1",
