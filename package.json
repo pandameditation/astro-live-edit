@@ -4,6 +4,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "install:all": "concurrently \"npm install\" \"cd edit-server && npm install\"",
     "dev": "astro dev",
     "edit-server": "node server/save-server.js",
     "dev:edit": "concurrently \"npm run dev\" \"npm run edit-server\"",
