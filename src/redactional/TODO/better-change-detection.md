@@ -33,3 +33,6 @@ RECOMMENDATION:
    - Observer overhead (though minimal)
    - Constantly updating internal state
    - Might capture unwanted intermediate states
+
+CAREFUL:
+Take care not to introduce any regression. Take extra care about the list items indentation (li) as it should keep the same logic as today despite the blur event changes.
