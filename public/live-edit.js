@@ -22,7 +22,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const loc = el.getAttribute('data-source-loc');
       const tagName = el.tagName.toLowerCase();
 
+      // Debug: show raw HTML before cleaning
+      console.log('📝 Tag edited:', tagName);
+      console.log('📍 File:', file);
+      console.log('📍 Location:', loc);
+      console.log('🔴 Raw outerHTML BEFORE cleaning:');
+      console.log(el.outerHTML);
+
       const content = cleanPlusBeautifyHTML(el.innerHTML);
+      
+      // Debug: show cleaned HTML
+      console.log('🟢 Cleaned HTML AFTER cleanPlusBeautifyHTML:');
+      console.log(content);
+      
       if (!file || !loc || !content) return;
 
       const index = changes.findIndex(change => change.file === file && change.loc === loc);
@@ -33,6 +45,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add new entry
         changes.push({ file, loc, tagName, content });
       }
+      
+      // Debug: show payload metadata
+      console.log('📦 Payload metadata:');
+      console.log({
+        file,
+        loc,
+        tagName,
+        contentLength: content.length
+      });
     });
   });
 
@@ -52,18 +73,44 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   saveBtn.addEventListener('click', async () => {
-    console.log('Sending changes:', JSON.stringify(changes, null, 2));
-    const response = await fetch('http://localhost:3000/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(changes)
+    console.log('💾 Saving changes...');
+    console.log(`Total changes to save: ${changes.length}`);
+    
+    // Show preview of each change
+    changes.forEach((change, idx) => {
+      const preview = change.content.length > 200 
+        ? change.content.substring(0, 200) + '...'
+        : change.content;
+      console.log(`\nChange ${idx + 1}:`);
+      console.log(`  File: ${change.file}`);
+      console.log(`  Location: ${change.loc}`);
+      console.log(`  Tag: ${change.tagName}`);
+      console.log(`  Content preview: ${preview}`);
     });
+    
+    // Show complete JSON payload
+    console.log('\n🚀 Complete JSON payload being sent:');
+    console.log(JSON.stringify(changes, null, 2));
+    
+    try {
+      const response = await fetch('http://localhost:3000/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(changes)
+      });
 
-    if (response.ok) {
-      alert('Changes saved!');
-    } else {
-      alert(`Save failed: ${response.status} ${response.statusText}`);
-      console.log(changes)
+      if (response.ok) {
+        console.log('✅ Changes saved successfully!');
+        alert('Changes saved!');
+        // Clear changes array after successful save
+        changes.length = 0;
+      } else {
+        console.error('❌ Save failed:', response.status, response.statusText);
+        alert(`Save failed: ${response.status} ${response.statusText}`);
+      }
+    } catch (error) {
+      console.error('❌ Network error during save:', error);
+      alert(`Save failed: ${error.message}`);
     }
   });
 
