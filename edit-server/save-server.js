@@ -77,12 +77,30 @@ app.post('/save', (req, res) => {
     return res.status(400).send('Invalid data: expected an array');
   }
 
+  // Debug: Request received
+  console.log('\n📥 ========================================');
+  console.log('📥 Save request received');
+  console.log('📊 Number of edits:', edits.length);
+  console.log('========================================\n');
+
+  // Show preview of each edit
+  edits.forEach((edit, idx) => {
+    const preview = edit.content?.length > 150 
+      ? edit.content.substring(0, 150) + '...'
+      : edit.content;
+    console.log(`Edit ${idx + 1}:`);
+    console.log(`  File: ${edit.file}`);
+    console.log(`  Location: ${edit.loc}`);
+    console.log(`  Tag: ${edit.tagName}`);
+    console.log(`  Content preview: ${preview}\n`);
+  });
+
   // Group edits by file path
   const changesByFile = {};
 
   for (const { file, loc, content, tagName, outerContent } of edits) {
     if (!loc || typeof loc !== 'string') {
-      console.warn(`Skipping edit with invalid loc: ${loc}`);
+      console.warn(`⚠️  Skipping edit with invalid loc: ${loc}`);
       continue;
     }
 
@@ -91,7 +109,7 @@ app.post('/save', (req, res) => {
     const column = parseInt(colStr, 10);
 
     if (isNaN(line) || isNaN(column)) {
-      console.warn(`Skipping edit with invalid loc format: ${loc}`);
+      console.warn(`⚠️  Skipping edit with invalid loc format: ${loc}`);
       continue;
     }
 
@@ -105,21 +123,32 @@ app.post('/save', (req, res) => {
 
   try {
     for (const [file, changes] of Object.entries(changesByFile)) {
+      console.log('\n📝 ----------------------------------------');
+      console.log(`📝 Processing file: ${file}`);
+      
       const fullPath = path.resolve(file);
       let sourceText = fs.readFileSync(fullPath, 'utf-8');
 
       const isMarkdown = fullPath.endsWith('.md') || fullPath.endsWith('.mdx');
-      const isAstro = fullPath.endsWith('.astro')
+      const isAstro = fullPath.endsWith('.astro');
+      
+      const fileType = isMarkdown ? (fullPath.endsWith('.mdx') ? 'MDX' : 'Markdown') : (isAstro ? 'Astro' : 'Unknown');
+      console.log(`📋 File type: ${fileType}`);
+      console.log(`📊 Number of changes: ${changes.length}`);
+      
       const lines = sourceText.split('\n');
 
       if (isMarkdown) {
         const { frontmatter, body, offset } = extractFrontmatter(lines);
         changes
           .sort((a, b) => b.start.line - a.start.line)
-          .forEach(({ start, content, tagName }) => {
-            const idx = start.line - 1 - offset;
-            if (idx < 0 || idx >= body.length) {
-              console.warn(`[MD] Invalid line index ${idx} for file ${file}`);
+          .forEach(({ start, content, tagName }, idx) => {
+            console.log(`\n  Change ${idx + 1}:`);
+            console.log(`  🔍 Tag search: line ${start.line}, column ${start.column}, tag <${tagName}>`);
+            
+            const idx_line = start.line - 1 - offset;
+            if (idx_line < 0 || idx_line >= body.length) {
+              console.warn(`  ❌ Invalid line index ${idx_line} for file ${file}`);
               return;
             }
 
@@ -131,37 +160,75 @@ app.post('/save', (req, res) => {
 
             if (isHeading) {
               // Only replace the line of the heading
-              body.splice(idx, 1, ...newLines);
+              const oldContent = body[idx_line];
+              const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
+              const newPreview = markdown.length > 100 ? markdown.substring(0, 100) + '...' : markdown;
+              
+              console.log(`  ✅ Tag found at line ${idx_line + offset + 1}`);
+              console.log(`  🔴 OLD: ${oldPreview}`);
+              console.log(`  🟢 NEW: ${newPreview}`);
+              
+              body.splice(idx_line, 1, ...newLines);
             } else {
               // Replace entire block (until blank line or block stop)
-              const { start: blockStart, end: blockEnd } = findMarkdownBlock(body, idx);
+              const { start: blockStart, end: blockEnd } = findMarkdownBlock(body, idx_line);
+              const oldContent = body.slice(blockStart, blockEnd + 1).join('\n');
+              const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
+              const newPreview = markdown.length > 100 ? markdown.substring(0, 100) + '...' : markdown;
+              
+              console.log(`  ✅ Tag found at block lines ${blockStart + offset + 1}-${blockEnd + offset + 1}`);
+              console.log(`  🔴 OLD: ${oldPreview}`);
+              console.log(`  🟢 NEW: ${newPreview}`);
+              
               body.splice(blockStart, blockEnd - blockStart + 1, ...newLines);
             }
           });
-        console.log(frontmatter)
+        
         const finalOutput = [...frontmatter, ...body].join('\n');
         fs.writeFileSync(fullPath, finalOutput, 'utf-8');
+        console.log(`\n💾 File saved: ${file}`);
       } else if (isAstro) {
         // For Astro files: find tag by start line/column and replace inner content
         changes
           .sort((a, b) => b.start.line - a.start.line)
-          .forEach(({ start, content, tagName }) => {
+          .forEach(({ start, content, tagName }, idx) => {
+            console.log(`\n  Change ${idx + 1}:`);
+            console.log(`  🔍 Tag search: line ${start.line}, column ${start.column}, tag <${tagName}>`);
+            
             const tagRange = findTagAtPosition(sourceText, start.line, start.column, tagName);
             if (!tagRange) {
-              console.warn(`Could not find tag at ${file}:${start.line}:${start.column}`);
+              console.warn(`  ❌ Could not find tag at ${file}:${start.line}:${start.column}`);
               return;
             }
+
+            console.log(`  ✅ Tag found at position ${tagRange.innerStart}-${tagRange.innerEnd}`);
+            
+            const oldContent = sourceText.slice(tagRange.innerStart, tagRange.innerEnd);
+            const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
+            const newPreview = content.length > 100 ? content.substring(0, 100) + '...' : content;
+            
+            console.log(`  🔴 OLD: ${oldPreview}`);
+            console.log(`  🟢 NEW: ${newPreview}`);
 
             sourceText = replaceInnerContent(sourceText, tagRange.innerStart, tagRange.innerEnd, content);
           });
 
         fs.writeFileSync(fullPath, sourceText, 'utf-8');
+        console.log(`\n💾 File saved: ${file}`);
       }
+      
+      console.log('----------------------------------------');
     }
 
+    console.log('\n✅ ========================================');
+    console.log('✅ All changes saved successfully!');
+    console.log('========================================\n');
     res.sendStatus(200);
   } catch (err) {
-    console.error('Error saving file:', err);
+    console.error('\n❌ ========================================');
+    console.error('❌ Error saving file:');
+    console.error(err);
+    console.error('========================================\n');
     res.status(500).send('Failed to save');
   }
 });
