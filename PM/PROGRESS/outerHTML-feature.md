@@ -1,8 +1,9 @@
 # outerHTML Feature - Implementation Progress
 
-## Status: ✅ COMPLETE
+## Status: ✅ COMPLETE (with markdown fix)
 
 Implementation completed on 2026-02-09.
+Markdown regression fixed on 2026-02-09.
 
 ---
 
@@ -136,6 +137,83 @@ To verify the implementation works:
 - [ ] Check the source `.astro` file - should contain the style attribute on the `<ul>` tag
 - [ ] Verify nested tags and content are preserved
 - [ ] Test attribute-only change (no content edit) to ensure change detection works
+
+---
+
+## MARKDOWN REGRESSION FIX (2026-02-09)
+
+### Problem Discovered
+After implementing outerHTML for client, Markdown/MDX files lost list indentation on save. The issue was **double-wrapping** of content.
+
+**Root cause:**
+```javascript
+// Client now sends: "<ul><li>item</li></ul>" (outerHTML)
+// Server was doing: wrapped = `<ul>${content}</ul>`
+// Result: "<ul><ul><li>item</li></ul></ul>" ❌ Double-wrapped
+```
+
+This broke Turndown conversion and lost all indentation.
+
+### Solution Implemented
+Added smart detection to handle outerHTML properly for Markdown files:
+
+**Two new helper functions:**
+
+1. **`stripOuterTag(outerHTML, tagName)`** - Extracts innerHTML from outerHTML
+   ```javascript
+   stripOuterTag("<ul><li>item</li></ul>", "ul") 
+   → "<li>item</li>"
+   ```
+
+2. **`hasAttributes(outerHTML, tagName)`** - Detects if tag has any HTML attributes
+   ```javascript
+   hasAttributes("<ul style='color:red'>...</ul>", "ul") → true
+   hasAttributes("<ul>...</ul>", "ul") → false
+   ```
+
+**Markdown handler logic (lines 157-175):**
+```javascript
+// Check if content has HTML attributes
+const keepAsHTML = hasAttributes(content, tagName);
+
+if (keepAsHTML) {
+  // Keep as raw HTML (has custom attributes like style, class, etc.)
+  newLines = content.split('\n');
+} else {
+  // Convert to markdown (no custom attributes - prefer markdown syntax)
+  const innerContent = stripOuterTag(content, tagName);
+  const wrapped = `<${tagName}>${innerContent}</${tagName}>`;
+  markdown = turndownWithListContext(wrapped, tagName);
+  newLines = markdown.split('\n');
+}
+```
+
+### Behavior After Fix
+
+**Case 1: No attributes (prefer markdown)**
+```html
+<!-- Client sends: -->
+<ul><li>item 1</li><li>item 2</li></ul>
+
+<!-- Server converts to: -->
+- item 1
+- item 2
+```
+
+**Case 2: With attributes (keep HTML)**
+```html
+<!-- Client sends: -->
+<ul style="list-style-type: '✅'"><li>item 1</li></ul>
+
+<!-- Server keeps as: -->
+<ul style="list-style-type: '✅'"><li>item 1</li></ul>
+```
+
+### Files Changed
+
+**`/edit-server/save-server.js`:**
+- Lines 262-281: Added `stripOuterTag()` and `hasAttributes()` helper functions
+- Lines 157-175: Modified markdown handler to use helpers and decide HTML vs markdown
 
 ---
 

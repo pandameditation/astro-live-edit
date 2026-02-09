@@ -154,9 +154,25 @@ app.post('/save', (req, res) => {
               return;
             }
 
-            const wrapped = `<${tagName}>${content}</${tagName}>`;
-            const markdown = turndownWithListContext(wrapped, tagName);
-            const newLines = markdown.split('\n');
+            // Check if content has HTML attributes
+            const keepAsHTML = hasAttributes(content, tagName);
+            
+            let newLines;
+            let markdown;
+            
+            if (keepAsHTML) {
+              // Keep as raw HTML (has custom attributes)
+              console.log(`  🏷️  Tag has attributes - keeping as HTML`);
+              newLines = content.split('\n');
+              markdown = content; // For preview only
+            } else {
+              // Convert to markdown (no custom attributes)
+              console.log(`  📝 No attributes - converting to markdown`);
+              const innerContent = stripOuterTag(content, tagName);
+              const wrapped = `<${tagName}>${innerContent}</${tagName}>`;
+              markdown = turndownWithListContext(wrapped, tagName);
+              newLines = markdown.split('\n');
+            }
 
             const isHeading = /^h[1-6]$/i.test(tagName);
 
@@ -242,6 +258,30 @@ app.listen(3000, () => {
 //###########################
 //**** UTILITY FONCTIONS ****
 //###########################
+
+// Strip outer tag from outerHTML to get innerHTML
+function stripOuterTag(outerHTML, tagName) {
+  const openTagRegex = new RegExp(`^<${tagName}\\b[^>]*>`, 'i');
+  const closeTagRegex = new RegExp(`</${tagName}>$`, 'i');
+  
+  let result = outerHTML.trim();
+  result = result.replace(openTagRegex, '');
+  result = result.replace(closeTagRegex, '');
+  
+  return result;
+}
+
+// Check if outerHTML has any attributes
+function hasAttributes(outerHTML, tagName) {
+  const openTagRegex = new RegExp(`^<${tagName}\\b([^>]*?)(/?)>`, 'i');
+  const match = outerHTML.trim().match(openTagRegex);
+  
+  if (!match) return false;
+  
+  const attributesPart = match[1].trim();
+  // If there's anything between tag name and closing >, it's an attribute
+  return attributesPart.length > 0;
+}
 
 function preserveMarkdownPrefix(originalLine, newContent) {
   // Regex to capture common Markdown prefixes (headers, lists, blockquotes)
