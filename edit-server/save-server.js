@@ -14,7 +14,7 @@ const VOID_ELEMENTS = new Set([
   'link', 'meta', 'source', 'track', 'wbr'
 ]);
 
-// Finds the tag that wraps the given (line, column) position in sourceText
+// Finds the entire tag (opening + content + closing) at the given (line, column) position in sourceText
 function findTagAtPosition(sourceText, line, column, expectedTagName) {
   const lines = sourceText.split('\n');
   const lineIndex = line - 1;
@@ -42,8 +42,8 @@ function findTagAtPosition(sourceText, line, column, expectedTagName) {
       if (offset >= openTagStart && offset <= openTagEnd) {
         return {
           tagName,
-          innerStart: openTagStart,
-          innerEnd: openTagEnd,
+          outerStart: openTagStart,
+          outerEnd: openTagEnd,
           selfClosing: true
         };
       }
@@ -52,12 +52,14 @@ function findTagAtPosition(sourceText, line, column, expectedTagName) {
       const closeTagOffset = findMatchingCloseTag(sourceText, openTagEnd, tagName);
       if (closeTagOffset === -1) continue;
 
+      const closeTagEnd = closeTagOffset + `</${tagName}>`.length;
+
       // Check if the cursor offset is inside the opening/closing tag range
       if (offset >= openTagEnd && offset < closeTagOffset) {
         return {
           tagName,
-          innerStart: openTagEnd,
-          innerEnd: closeTagOffset
+          outerStart: openTagStart,
+          outerEnd: closeTagEnd
         };
       }
     }
@@ -66,9 +68,9 @@ function findTagAtPosition(sourceText, line, column, expectedTagName) {
   return null; // No tag found containing the position
 }
 
-// Replace the content between innerStart and innerEnd in sourceText with newContent
-function replaceInnerContent(sourceText, innerStart, innerEnd, newContent) {
-  return sourceText.slice(0, innerStart) + newContent + sourceText.slice(innerEnd);
+// Replace the entire tag (outerHTML) in sourceText with newContent
+function replaceOuterContent(sourceText, outerStart, outerEnd, newContent) {
+  return sourceText.slice(0, outerStart) + newContent + sourceText.slice(outerEnd);
 }
 
 app.post('/save', (req, res) => {
@@ -188,7 +190,7 @@ app.post('/save', (req, res) => {
         fs.writeFileSync(fullPath, finalOutput, 'utf-8');
         console.log(`\n💾 File saved: ${file}`);
       } else if (isAstro) {
-        // For Astro files: find tag by start line/column and replace inner content
+        // For Astro files: find tag by start line/column and replace entire tag (outerHTML)
         changes
           .sort((a, b) => b.start.line - a.start.line)
           .forEach(({ start, content, tagName }, idx) => {
@@ -201,16 +203,16 @@ app.post('/save', (req, res) => {
               return;
             }
 
-            console.log(`  ✅ Tag found at position ${tagRange.innerStart}-${tagRange.innerEnd}`);
+            console.log(`  ✅ Tag found at position ${tagRange.outerStart}-${tagRange.outerEnd}`);
             
-            const oldContent = sourceText.slice(tagRange.innerStart, tagRange.innerEnd);
+            const oldContent = sourceText.slice(tagRange.outerStart, tagRange.outerEnd);
             const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
             const newPreview = content.length > 100 ? content.substring(0, 100) + '...' : content;
             
             console.log(`  🔴 OLD: ${oldPreview}`);
             console.log(`  🟢 NEW: ${newPreview}`);
 
-            sourceText = replaceInnerContent(sourceText, tagRange.innerStart, tagRange.innerEnd, content);
+            sourceText = replaceOuterContent(sourceText, tagRange.outerStart, tagRange.outerEnd, content);
           });
 
         fs.writeFileSync(fullPath, sourceText, 'utf-8');

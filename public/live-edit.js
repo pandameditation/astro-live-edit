@@ -6,16 +6,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.querySelectorAll(editableTags).forEach(el => {
     el.contentEditable = true;
-    lastSavedContent.set(el, el.innerHTML);
+    lastSavedContent.set(el, el.outerHTML);
 
 
     el.addEventListener('blur', () => {
       //Check that it has changed since last time
       const last = lastSavedContent.get(el);
-      if (last === el.innerHTML) {
-        return; //current innerHTML is same as last. No change detected
+      if (last === el.outerHTML) {
+        return; //current outerHTML is same as last. No change detected
       }
-      lastSavedContent.set(el, el.innerHTML);
+      lastSavedContent.set(el, el.outerHTML);
 
       // If there are changes, Save and send them to server
       const file = el.getAttribute('data-source-file');
@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('🔴 Raw outerHTML BEFORE cleaning:');
       console.log(el.outerHTML);
 
-      const content = cleanPlusBeautifyHTML(el.innerHTML);
+      const content = cleanPlusBeautifyHTML(el.outerHTML);
       
       // Debug: show cleaned HTML
       console.log('🟢 Cleaned HTML AFTER cleanPlusBeautifyHTML:');
