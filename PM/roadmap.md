@@ -50,79 +50,20 @@ Must preserve the existing Tab/Shift+Tab list item indentation logic. The blur e
 
 ---
 
-### *TODO-0003: Debug Verbosity Toggle (Retry with Simpler Approach)*
-
-**Priority:** LOW  
-**Complexity:** ~30-50 lines (simpler than attempted)  
-**Status:** Needs simpler implementation approach (see `PM/ABANDONED/debug-verbosity-toggle-POSTMORTEM.md`)
-
-**Problem:**
-Application logs verbosely by default during development, cluttering console and terminal output. Need a simple ON/OFF toggle for debug logging.
-
-**Previous attempt failed:**
-First implementation used complex inline Node.js script in package.json that broke the startup. See postmortem for full details.
-
-**Better approaches for retry:**
-
-**Option A: Separate script file** (RECOMMENDED - simplest)
-```javascript
-// scripts/dev-edit.js
-const { spawn } = require('child_process');
-const verbose = process.argv.includes('--verbose');
-process.env.VERBOSE = verbose ? 'true' : 'false';
-spawn('npx', ['concurrently', 'npm run dev', 'npm run edit-server'], {
-  stdio: 'inherit',
-  shell: true
-});
-```
-Then in package.json: `"dev:edit": "node scripts/dev-edit.js"`
-
-**Option B: Environment variable convention**
-```javascript
-// debug.config.js (at project root)
-module.exports = {
-  verbose: process.env.DEBUG === 'true'
-};
-```
-Usage: `DEBUG=true npm run dev:edit` (standard Unix pattern)
-
-**Option C: cross-env package**
-```json
-"dev:edit": "cross-env VERBOSE=false concurrently \"npm run dev\" \"npm run edit-server\"",
-"dev:edit:verbose": "cross-env VERBOSE=true concurrently \"npm run dev\" \"npm run dev-server\""
-```
-Requires `npm install cross-env` but is very straightforward.
-
-**What to implement (regardless of option):**
-- Logging utility functions in both client and server
-- Wrap console.log statements with conditional checks
-- Always show critical errors and save confirmations
-- Verbose mode shows file operations, transformations, payloads
-
-**Key lesson learned:**
-Keep package.json scripts simple. No inline Node.js programs. Prefer boring, proven patterns.
-
-**Definition of done:**
-- `npm run dev:edit` produces minimal, clean output (default)
-- `npm run dev:edit --verbose` (or equivalent) shows all debug details
-- Critical errors always visible regardless of mode
-- Application starts successfully
-
-**Estimated effort:** 1 hour (with simpler approach)
-
 ---
 
 ## Bug Fixes Roadmap
 
-_No known critical bugs at this time._
+- Make sure that introducing HTML tags inside inside a markdown .md or .mdx file is supported, and that the changes in HTML-inside-md are sent to the server's payload
 
 ---
 
 ## Backlog
 
-- Multi-level logging (ERROR/WARN/INFO/DEBUG/TRACE) instead of simple ON/OFF toggle
-- Visual "unsaved changes" indicator (yellow dot/badge on save button)
+- Support of i18n strings : the system should detect i18n strings and modify them in place
+- Visual "unsaved changes" indicator (yellow dot/badge on save button) (Dependancy on better-change-detection)
 - Undo/redo functionality for edits made in browser
+- History of the previous states that were Saved in the session (in localstorage)
 - Auto-save with configurable delay (e.g., save 2 seconds after last change)
 - Support for editing Astro component props via inspector
 - Keyboard shortcuts (Ctrl+S to save, Ctrl+Z for undo)
