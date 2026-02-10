@@ -164,7 +164,6 @@ app.post('/save', (req, res) => {
         // For Markdown path: work with body line array
         let bodyAsString = null;
         let needsStringMode = false;
-        let usedMarkdownPromotion = false; // Track if we promoted markdown→HTML
         
         // Check if any change needs HTML mode
         console.log(`\n🔍 CHECKING ${changes.length} CHANGE(S) FOR ATTRIBUTES:`);
@@ -214,30 +213,10 @@ app.post('/save', (req, res) => {
               
               const tagRange = findTagAtPosition(bodyAsString, bodyLine, start.column, tagName);
               if (!tagRange) {
-                // Tag not found in source → source is markdown, browser sent HTML with attributes
-                console.warn(`  ⚠️  Could not find <${tagName}> tag - source is markdown, converting to HTML`);
-                console.log(`    This is a markdown→HTML promotion (attributes require HTML)`);
-                
-                // Find the markdown block at this position
-                const { start: blockStart, end: blockEnd } = findMarkdownBlock(body, idx_line);
-                const oldMarkdown = body.slice(blockStart, blockEnd + 1).join('\n');
-                const oldPreview = oldMarkdown.length > 100 ? oldMarkdown.substring(0, 100) + '...' : oldMarkdown;
-                
-                // Collapse HTML to single line for MDX compatibility
-                const singleLineHTML = content.replace(/\n\s*/g, ' ').trim();
-                const newPreview = singleLineHTML.length > 100 ? singleLineHTML.substring(0, 100) + '...' : singleLineHTML;
-                
-                console.log(`  ✅ Markdown block found at lines ${blockStart + offset + 1}-${blockEnd + offset + 1}`);
-                console.log(`  🔴 OLD (markdown): ${oldPreview}`);
-                console.log(`  🟢 NEW (HTML): ${newPreview}`);
-                
-                // Replace the markdown block with HTML
-                body.splice(blockStart, blockEnd - blockStart + 1, singleLineHTML);
-                usedMarkdownPromotion = true; // Flag that we modified body array directly
-                
-                console.log(`    Promoted markdown to HTML - block replaced in body array`);
-                
-                return; // Done with this change (don't update bodyAsString)
+                console.warn(`  ❌ Could not find tag at body line ${bodyLine}:${start.column}`);
+                console.warn(`    bodyAsString length: ${bodyAsString?.length || 0}`);
+                console.warn(`    First 200 chars: ${bodyAsString?.substring(0, 200) || 'NULL'}`);
+                return;
               }
               
               console.log(`  ✅ Tag found at position ${tagRange.outerStart}-${tagRange.outerEnd}`);
@@ -296,8 +275,7 @@ app.post('/save', (req, res) => {
           });
         
         // If we used string mode, convert back to lines
-        // UNLESS we used markdown promotion (which modifies body array directly)
-        if (needsStringMode && bodyAsString !== null && !usedMarkdownPromotion) {
+        if (needsStringMode && bodyAsString !== null) {
           console.log(`\n🔄 CONVERTING BACK TO LINES (string → array)`);
           console.log(`  bodyAsString length: ${bodyAsString.length}`);
           const linesBefore = body.length;
@@ -307,8 +285,6 @@ app.post('/save', (req, res) => {
           body.slice(0, 3).forEach((line, i) => {
             console.log(`    ${i + 1}: ${line.substring(0, 80)}${line.length > 80 ? '...' : ''}`);
           });
-        } else if (usedMarkdownPromotion) {
-          console.log(`\n✅ SKIPPING string→array conversion (used markdown promotion, body already modified)`);
         }
         
         const finalOutput = [...frontmatter, ...body].join('\n');
