@@ -320,6 +320,14 @@ app.post('/save', (req, res) => {
             console.log(`  ✅ Tag found at position ${tagRange.outerStart}-${tagRange.outerEnd}`);
             
             const oldContent = sourceText.slice(tagRange.outerStart, tagRange.outerEnd);
+            
+            // Safety net: skip if original content contains {…} template expressions
+            const innerContent = oldContent.replace(/^<[^>]+>/, '').replace(/<\/[^>]+>$/, '');
+            if (/\{[^}]+\}/.test(innerContent)) {
+              console.log(`  ⚠️  SKIPPED: original content contains dynamic expression: ${innerContent.substring(0, 80)}`);
+              return;
+            }
+            
             const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
             const newPreview = content.length > 100 ? content.substring(0, 100) + '...' : content;
             
