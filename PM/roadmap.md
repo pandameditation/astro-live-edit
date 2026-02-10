@@ -54,8 +54,7 @@ Must preserve the existing Tab/Shift+Tab list item indentation logic. The blur e
 
 ## Bug Fixes Roadmap
 
-- In .astro files (and in general in .jx, .svelte files etc. for every Astro island), if there is interpolated string / variables / dynamic HTML like: {tr("site.translatable", "fr")}` or `{visible && <p>Show me!</p>}`, dynamic tags like const Element = 'div' <Element>Hello!</Element> (see full list here: https://docs.astro.build/en/reference/astro-syntax/) this should be handled differently than regular static text: 1. In the frontend, dynamic HTML should not be editable. 2. On the backend, if we receive a payload from the frontend, we should not change anything on this kind of attributes. We can modify what is around, but these attributes should be preserved. 
-- Exception to the rule that we should not edit (preserve) interpolated string : the i18n strings like {tr("site.translatable", "fr")} refers to a i18n file containing locales. It would be good to have a way to change the string that it refers to. Same for things like: {visible ? <p>Show me!</p> : <p>Else show me!</p>} -> It would be nice to edit the particular text in tags without destroying the conditional logic.
+- Exception to the rule that we should not edit (preserve) interpolated string: the i18n strings like {tr("site.translatable", "fr")} refers to a i18n file containing locales. It would be good to have a way to change the string that it refers to. Same for things like: {visible ? <p>Show me!</p> : <p>Else show me!</p>} -> It would be nice to edit the particular text in tags without destroying the conditional logic.
 - Make sure that introducing HTML tags inside inside a markdown .md or .mdx file is supported, and that the changes in HTML-inside-md are sent to the server's payload
 
 ---
