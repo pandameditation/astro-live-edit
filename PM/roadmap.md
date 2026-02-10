@@ -6,48 +6,6 @@ This roadmap outlines the planned features and bug fixes for the Astro Live Edit
 
 ## Feature Roadmap
 
-### *TODO-0001: OuterHTML Support for Astro Files*
-
-**Priority:** HIGH  
-**Complexity:** ~80-100 lines  
-**Status:** Ready for implementation
-
-**Problem:**
-Currently, users can only edit content inside tags but cannot modify tag attributes (like adding styles to `<ul>` tags). The system replaces innerHTML only, not the entire tag structure.
-
-**What needs to be done:**
-Enable users to modify tag attributes in the browser inspector and have those changes saved back to source files. Change from innerHTML to outerHTML handling for Astro files.
-
-**Implementation approach:**
-
-1. **Client-side changes (`/public/live-edit.js`):**
-   - Line 9: Change `lastSavedContent.set(el, el.innerHTML)` → `lastSavedContent.set(el, el.outerHTML)`
-   - Line 15: Change `if (last === el.innerHTML)` → `if (last === el.outerHTML)` (detect attribute changes)
-   - Line 18: Change `lastSavedContent.set(el, el.innerHTML)` → `lastSavedContent.set(el, el.outerHTML)`
-   - Line 25: Change `cleanPlusBeautifyHTML(el.innerHTML)` → `cleanPlusBeautifyHTML(el.outerHTML)`
-
-2. **Server-side changes (`edit-server/save-server.js`):**
-   - Rename `findTagAtPosition` to reflect it finds entire tags (not just inner content)
-   - Update return values: `outerStart` (beginning of opening tag) and `outerEnd` (end of closing tag including `</${tagName}>`)
-   - Rename `replaceInnerContent` → `replaceOuterContent`
-   - Replace entire tag span (opening tag + content + closing tag) with new outerHTML
-
-**Key considerations:**
-- Markdown/MDX files remain unchanged (they already convert to markdown)
-- Source location tracking stays the same (points to opening tag position)
-- Must preserve nested tag structure and indentation
-- Example use case: User adds `style="list-style-type: '✅ '"` to a `<ul>` tag
-
-**Definition of done:**
-- Users can modify tag attributes in browser inspector
-- Entire tag (opening + content + closing) gets replaced in source file
-- Existing content and nested tags are preserved
-- Change detection works for attribute-only changes
-
-**Estimated effort:** 2-3 hours
-
----
-
 ### *TODO-0002: Better Change Detection with MutationObserver*
 
 **Priority:** MEDIUM  
