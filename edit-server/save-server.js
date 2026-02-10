@@ -14,24 +14,33 @@ const VOID_ELEMENTS = new Set([
   'link', 'meta', 'source', 'track', 'wbr'
 ]);
 
-// Finds the tag that wraps the given (line, column) position in sourceText
+// Finds the entire tag (opening + content + closing) at the given (line, column) position in sourceText
 function findTagAtPosition(sourceText, line, column, expectedTagName) {
+  console.log(`    [findTagAtPosition] Searching for <${expectedTagName}> at line ${line}, column ${column}`);
   const lines = sourceText.split('\n');
   const lineIndex = line - 1;
-  if (lineIndex < 0 || lineIndex >= lines.length) return null;
+  if (lineIndex < 0 || lineIndex >= lines.length) {
+    console.log(`    [findTagAtPosition] ❌ Invalid line ${line} (lineIndex=${lineIndex}, total lines=${lines.length})`);
+    return null;
+  }
 
   const tagName = expectedTagName?.toLowerCase();
   const offset = lines
     .slice(0, lineIndex)
     .reduce((acc, l) => acc + l.length + 1, 0) + (column - 1);
+  
+  console.log(`    [findTagAtPosition] Calculated offset=${offset} from line ${line}, column ${column}`);
+  console.log(`    [findTagAtPosition] Context at offset: "${sourceText.substring(offset, offset + 50)}..."`);
 
   const tagRegex = new RegExp(`<${tagName}\\b[^>]*?>`, 'gi');
   tagRegex.lastIndex = 0;
 
   let match;
+  let matchCount = 0;
 
   // Scan through all opening tags matching expectedTagName
   while ((match = tagRegex.exec(sourceText)) !== null) {
+    matchCount++;
     const openTagStart = match.index;
     const openTagEnd = tagRegex.lastIndex;
 
@@ -40,35 +49,44 @@ function findTagAtPosition(sourceText, line, column, expectedTagName) {
     if (isSelfClosing) {
       // If the tag is self-closing, check if the cursor falls inside its bounds
       if (offset >= openTagStart && offset <= openTagEnd) {
+        console.log(`    [findTagAtPosition] ✅ Found self-closing tag (match ${matchCount}) at ${openTagStart}-${openTagEnd}`);
         return {
           tagName,
-          innerStart: openTagStart,
-          innerEnd: openTagEnd,
+          outerStart: openTagStart,
+          outerEnd: openTagEnd,
           selfClosing: true
         };
       }
     } else {
       // Find the matching close tag for non-void elements
       const closeTagOffset = findMatchingCloseTag(sourceText, openTagEnd, tagName);
-      if (closeTagOffset === -1) continue;
+      if (closeTagOffset === -1) {
+        console.log(`    [findTagAtPosition] No matching close tag for match ${matchCount} at ${openTagStart}`);
+        continue;
+      }
+
+      const closeTagEnd = closeTagOffset + `</${tagName}>`.length;
 
       // Check if the cursor offset is inside the opening/closing tag range
       if (offset >= openTagEnd && offset < closeTagOffset) {
+        console.log(`    [findTagAtPosition] ✅ Found matching tag (match ${matchCount}) at ${openTagStart}-${closeTagEnd}`);
+        console.log(`    [findTagAtPosition] Tag content: "${sourceText.substring(openTagStart, Math.min(openTagStart + 100, closeTagEnd))}..."`);
         return {
           tagName,
-          innerStart: openTagEnd,
-          innerEnd: closeTagOffset
+          outerStart: openTagStart,
+          outerEnd: closeTagEnd
         };
       }
     }
   }
 
+  console.log(`    [findTagAtPosition] ❌ No matching tag found (scanned ${matchCount} candidates)`);
   return null; // No tag found containing the position
 }
 
-// Replace the content between innerStart and innerEnd in sourceText with newContent
-function replaceInnerContent(sourceText, innerStart, innerEnd, newContent) {
-  return sourceText.slice(0, innerStart) + newContent + sourceText.slice(innerEnd);
+// Replace the entire tag (outerHTML) in sourceText with newContent
+function replaceOuterContent(sourceText, outerStart, outerEnd, newContent) {
+  return sourceText.slice(0, outerStart) + newContent + sourceText.slice(outerEnd);
 }
 
 app.post('/save', (req, res) => {
@@ -139,7 +157,34 @@ app.post('/save', (req, res) => {
       const lines = sourceText.split('\n');
 
       if (isMarkdown) {
-        const { frontmatter, body, offset } = extractFrontmatter(lines);
+        const { frontmatter, offset } = extractFrontmatter(lines);
+        let body = extractFrontmatter(lines).body; // Use 'let' to allow reassignment
+        
+        // For HTML path: work with full sourceText string
+        // For Markdown path: work with body line array
+        let bodyAsString = null;
+        let needsStringMode = false;
+        
+        // Check if any change needs HTML mode
+        console.log(`\n🔍 CHECKING ${changes.length} CHANGE(S) FOR ATTRIBUTES:`);
+        changes.forEach(({ start, content, tagName }, i) => {
+          const hasAttrs = hasAttributes(content, tagName);
+          console.log(`  Change ${i + 1}: <${tagName}> hasAttributes=${hasAttrs}`);
+          if (hasAttrs) {
+            console.log(`    → Content preview: ${content.substring(0, 80)}...`);
+            needsStringMode = true;
+          }
+        });
+        
+        if (needsStringMode) {
+          console.log(`\n🔄 SWITCHING TO HTML MODE (string-based processing)`);
+          // Convert body to string for findTagAtPosition
+          bodyAsString = body.join('\n');
+          console.log(`  Body converted to string: ${bodyAsString.length} characters`);
+        } else {
+          console.log(`\n📝 USING MARKDOWN MODE (line-based processing)`);
+        }
+        
         changes
           .sort((a, b) => b.start.line - a.start.line)
           .forEach(({ start, content, tagName }, idx) => {
@@ -152,43 +197,114 @@ app.post('/save', (req, res) => {
               return;
             }
 
-            const wrapped = `<${tagName}>${content}</${tagName}>`;
-            const markdown = turndownWithListContext(wrapped, tagName);
-            const newLines = markdown.split('\n');
-
+            // Check if content has HTML attributes
+            const keepAsHTML = hasAttributes(content, tagName);
             const isHeading = /^h[1-6]$/i.test(tagName);
-
-            if (isHeading) {
-              // Only replace the line of the heading
-              const oldContent = body[idx_line];
-              const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
-              const newPreview = markdown.length > 100 ? markdown.substring(0, 100) + '...' : markdown;
+            
+            if (keepAsHTML && !isHeading) {
+              // HTML PATH: Use Astro-style tag finding
+              console.log(`  🏷️  Tag has attributes - using Astro logic for HTML`);
+              console.log(`    keepAsHTML=${keepAsHTML}, isHeading=${isHeading}`);
+              console.log(`    idx_line=${idx_line}, offset=${offset}, body.length=${body.length}`);
               
-              console.log(`  ✅ Tag found at line ${idx_line + offset + 1}`);
+              // Line number relative to body (not full file)
+              const bodyLine = idx_line + 1; // Convert to 1-indexed
+              console.log(`    Looking for tag at bodyLine=${bodyLine}, column=${start.column}`);
+              
+              const tagRange = findTagAtPosition(bodyAsString, bodyLine, start.column, tagName);
+              if (!tagRange) {
+                console.warn(`  ❌ Could not find tag at body line ${bodyLine}:${start.column}`);
+                console.warn(`    bodyAsString length: ${bodyAsString?.length || 0}`);
+                console.warn(`    First 200 chars: ${bodyAsString?.substring(0, 200) || 'NULL'}`);
+                return;
+              }
+              
+              console.log(`  ✅ Tag found at position ${tagRange.outerStart}-${tagRange.outerEnd}`);
+              
+              const oldContent = bodyAsString.slice(tagRange.outerStart, tagRange.outerEnd);
+              const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
+              
+              // Collapse to single line for MDX compatibility
+              const singleLineHTML = content.replace(/\n\s*/g, ' ').trim();
+              const newPreview = singleLineHTML.length > 100 ? singleLineHTML.substring(0, 100) + '...' : singleLineHTML;
+              
               console.log(`  🔴 OLD: ${oldPreview}`);
               console.log(`  🟢 NEW: ${newPreview}`);
               
-              body.splice(idx_line, 1, ...newLines);
+              console.log(`    Replacing content in bodyAsString...`);
+              const beforeLength = bodyAsString.length;
+              // Replace in string
+              bodyAsString = replaceOuterContent(bodyAsString, tagRange.outerStart, tagRange.outerEnd, singleLineHTML);
+              const afterLength = bodyAsString.length;
+              console.log(`    bodyAsString length: ${beforeLength} → ${afterLength} (diff: ${afterLength - beforeLength})`);
+              
             } else {
-              // Replace entire block (until blank line or block stop)
-              const { start: blockStart, end: blockEnd } = findMarkdownBlock(body, idx_line);
-              const oldContent = body.slice(blockStart, blockEnd + 1).join('\n');
-              const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
-              const newPreview = markdown.length > 100 ? markdown.substring(0, 100) + '...' : markdown;
+              // MARKDOWN PATH: Convert to markdown syntax
+              console.log(`  📝 No attributes - converting to markdown`);
               
-              console.log(`  ✅ Tag found at block lines ${blockStart + offset + 1}-${blockEnd + offset + 1}`);
-              console.log(`  🔴 OLD: ${oldPreview}`);
-              console.log(`  🟢 NEW: ${newPreview}`);
-              
-              body.splice(blockStart, blockEnd - blockStart + 1, ...newLines);
+              const innerContent = stripOuterTag(content, tagName);
+              const wrapped = `<${tagName}>${innerContent}</${tagName}>`;
+              const markdown = turndownWithListContext(wrapped, tagName);
+              const newLines = markdown.split('\n');
+
+              if (isHeading) {
+                // Only replace the line of the heading
+                const oldContent = body[idx_line];
+                const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
+                const newPreview = markdown.length > 100 ? markdown.substring(0, 100) + '...' : markdown;
+                
+                console.log(`  ✅ Tag found at line ${idx_line + offset + 1}`);
+                console.log(`  🔴 OLD: ${oldPreview}`);
+                console.log(`  🟢 NEW: ${newPreview}`);
+                
+                body.splice(idx_line, 1, ...newLines);
+              } else {
+                // Replace entire markdown block
+                const { start: blockStart, end: blockEnd } = findMarkdownBlock(body, idx_line);
+                const oldContent = body.slice(blockStart, blockEnd + 1).join('\n');
+                const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
+                const newPreview = markdown.length > 100 ? markdown.substring(0, 100) + '...' : markdown;
+                
+                console.log(`  ✅ Tag found at block lines ${blockStart + offset + 1}-${blockEnd + offset + 1}`);
+                console.log(`  🔴 OLD: ${oldPreview}`);
+                console.log(`  🟢 NEW: ${newPreview}`);
+                
+                body.splice(blockStart, blockEnd - blockStart + 1, ...newLines);
+              }
             }
           });
         
+        // If we used string mode, convert back to lines
+        if (needsStringMode && bodyAsString !== null) {
+          console.log(`\n🔄 CONVERTING BACK TO LINES (string → array)`);
+          console.log(`  bodyAsString length: ${bodyAsString.length}`);
+          const linesBefore = body.length;
+          body = bodyAsString.split('\n');
+          console.log(`  body lines: ${linesBefore} → ${body.length}`);
+          console.log(`  First 3 lines after conversion:`);
+          body.slice(0, 3).forEach((line, i) => {
+            console.log(`    ${i + 1}: ${line.substring(0, 80)}${line.length > 80 ? '...' : ''}`);
+          });
+        }
+        
         const finalOutput = [...frontmatter, ...body].join('\n');
+        console.log(`\n📦 FINAL OUTPUT: ${finalOutput.length} characters, ${frontmatter.length + body.length} lines`);
+        console.log(`  Frontmatter lines: ${frontmatter.length}`);
+        console.log(`  Body lines: ${body.length}`);
+        
         fs.writeFileSync(fullPath, finalOutput, 'utf-8');
         console.log(`\n💾 File saved: ${file}`);
+        
+        // Verify write
+        const verifyContent = fs.readFileSync(fullPath, 'utf-8');
+        console.log(`✅ Verification: File on disk is ${verifyContent.length} characters`);
+        if (verifyContent === finalOutput) {
+          console.log(`✅ Write verified: Content matches what we wrote`);
+        } else {
+          console.error(`❌ Write mismatch: Disk content differs from what we tried to write!`);
+        }
       } else if (isAstro) {
-        // For Astro files: find tag by start line/column and replace inner content
+        // For Astro files: find tag by start line/column and replace entire tag (outerHTML)
         changes
           .sort((a, b) => b.start.line - a.start.line)
           .forEach(({ start, content, tagName }, idx) => {
@@ -201,16 +317,16 @@ app.post('/save', (req, res) => {
               return;
             }
 
-            console.log(`  ✅ Tag found at position ${tagRange.innerStart}-${tagRange.innerEnd}`);
+            console.log(`  ✅ Tag found at position ${tagRange.outerStart}-${tagRange.outerEnd}`);
             
-            const oldContent = sourceText.slice(tagRange.innerStart, tagRange.innerEnd);
+            const oldContent = sourceText.slice(tagRange.outerStart, tagRange.outerEnd);
             const oldPreview = oldContent.length > 100 ? oldContent.substring(0, 100) + '...' : oldContent;
             const newPreview = content.length > 100 ? content.substring(0, 100) + '...' : content;
             
             console.log(`  🔴 OLD: ${oldPreview}`);
             console.log(`  🟢 NEW: ${newPreview}`);
 
-            sourceText = replaceInnerContent(sourceText, tagRange.innerStart, tagRange.innerEnd, content);
+            sourceText = replaceOuterContent(sourceText, tagRange.outerStart, tagRange.outerEnd, content);
           });
 
         fs.writeFileSync(fullPath, sourceText, 'utf-8');
@@ -240,6 +356,35 @@ app.listen(3000, () => {
 //###########################
 //**** UTILITY FONCTIONS ****
 //###########################
+
+// Strip outer tag from outerHTML to get innerHTML
+function stripOuterTag(outerHTML, tagName) {
+  const openTagRegex = new RegExp(`^<${tagName}\\b[^>]*>`, 'i');
+  const closeTagRegex = new RegExp(`</${tagName}>$`, 'i');
+  
+  let result = outerHTML.trim();
+  result = result.replace(openTagRegex, '');
+  result = result.replace(closeTagRegex, '');
+  
+  return result;
+}
+
+// Check if outerHTML has any attributes
+function hasAttributes(outerHTML, tagName) {
+  const openTagRegex = new RegExp(`^<${tagName}\\b([^>]*?)(/?)>`, 'i');
+  const match = outerHTML.trim().match(openTagRegex);
+  
+  if (!match) {
+    console.log(`    [hasAttributes] No match for <${tagName}> in: ${outerHTML.substring(0, 50)}...`);
+    return false;
+  }
+  
+  const attributesPart = match[1].trim();
+  const hasAttrs = attributesPart.length > 0;
+  console.log(`    [hasAttributes] <${tagName}> attributes="${attributesPart}" → ${hasAttrs}`);
+  // If there's anything between tag name and closing >, it's an attribute
+  return hasAttrs;
+}
 
 function preserveMarkdownPrefix(originalLine, newContent) {
   // Regex to capture common Markdown prefixes (headers, lists, blockquotes)
