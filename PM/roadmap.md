@@ -58,13 +58,14 @@ Must preserve the existing Tab/Shift+Tab list item indentation logic. The blur e
 ## Bug Fixes Roadmap
 
 - Modifying the intro.md file does not result in saved changes. It seems to work in the frontend and sends the correct payload. But it doesn't do the full-trip from the backend and the changes are lost. Is it because we use custom HTML tag inside the .md like <br /> ? to develop
-- Handle dynamic content handling in Astro islands as well (support React template literal, svelte interpolation, etc.)
 - Make sure that introducing HTML tags inside inside a markdown .md or .mdx file is supported, and that the changes in HTML-inside-md are sent to the server's payload
+
 
 ---
 
 ## Backlog
 
+- To handle dynamic content/string literals in Astro islands
 - Support of i18n strings : the system should detect i18n strings and modify them in place
 - Visual "unsaved changes" indicator (yellow dot/badge on save button) (Dependancy on better-change-detection)
 - Undo/redo functionality for edits made in browser
