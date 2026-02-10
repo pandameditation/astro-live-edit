@@ -5,6 +5,14 @@ document.addEventListener('DOMContentLoaded', () => {
   markIndentableLists();
 
   document.querySelectorAll(editableTags).forEach(el => {
+    // Skip elements with dynamic template expressions
+    if (el.getAttribute('data-dynamic') === 'true') {
+      el.contentEditable = false;
+      el.style.opacity = '0.6';
+      el.style.cursor = 'not-allowed';
+      el.title = 'Dynamic content — not editable in browser';
+      return;
+    }
     el.contentEditable = true;
     lastSavedContent.set(el, el.outerHTML);
 

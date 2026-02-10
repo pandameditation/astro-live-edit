@@ -1,22 +1,74 @@
 ---
 import { cwd } from "node:process";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 const isDev = import.meta.env.DEV;
+
+// Scan .astro files and find lines with dynamic {…} expressions in element content
+function findDynamicLocations(dir) {
+  const locations = [];
+  function walk(d) {
+    for (const entry of readdirSync(d)) {
+      const full = join(d, entry);
+      if (statSync(full).isDirectory()) {
+        walk(full);
+      } else if (full.endsWith('.astro')) {
+        const source = readFileSync(full, 'utf-8');
+        const lines = source.split('\n');
+        // Skip frontmatter
+        let inFrontmatter = false;
+        let frontmatterDone = false;
+        for (let i = 0; i < lines.length; i++) {
+          if (!frontmatterDone && lines[i].trim() === '---') {
+            inFrontmatter = !inFrontmatter;
+            if (!inFrontmatter) frontmatterDone = true;
+            continue;
+          }
+          if (inFrontmatter) continue;
+          const line = lines[i];
+          // Check if line has a tag whose content contains {…} (template expression)
+          // Match: <tagName ...>...{...}...</tagName> or just {expression} as content
+          if (/\{[^}]+\}/.test(line)) {
+            // Exclude lines where { } is only inside an attribute value (e.g. style={{...}})
+            // Simple heuristic: strip attribute values, then check for remaining {
+            const withoutAttrs = line.replace(/<[^>]+>/g, '');
+            if (/\{[^}]+\}/.test(withoutAttrs)) {
+              locations.push(resolve(full) + ':' + (i + 1));
+            }
+          }
+        }
+      }
+    }
+  }
+  if (isDev) {
+    walk(join(cwd(), 'src'));
+  }
+  return locations;
+}
+
+const dynamicLocations = findDynamicLocations(cwd());
 ---
 
 {isDev && <script is:inline src="/live-edit.js" />}
 
-<script is:inline type="module" define:vars={{ cwd: cwd() }}>
+<script is:inline type="module" define:vars={{ cwd: cwd(), dynamicLocations }}>
+    const dynamicSet = new Set(dynamicLocations);
     for (const element of document.querySelectorAll(
         "[data-astro-source-file]",
     )) {
-        element.setAttribute(
-            "data-source-file",
-            element.getAttribute("data-astro-source-file"),
-            // .replace(`${cwd}/`, ""),
-        );
-        element.setAttribute(
-            "data-source-loc",
-            element.getAttribute("data-astro-source-loc"),
-        );
+        const file = element.getAttribute("data-astro-source-file");
+        const loc = element.getAttribute("data-astro-source-loc");
+        
+        element.setAttribute("data-source-file", file);
+        element.setAttribute("data-source-loc", loc);
+        
+        // Mark elements whose source contains {…} template expressions
+        if (loc && file) {
+            const line = loc.split(':')[0];
+            const key = file + ':' + line;
+            if (dynamicSet.has(key)) {
+                element.setAttribute("data-dynamic", "true");
+            }
+        }
     }
 </script>

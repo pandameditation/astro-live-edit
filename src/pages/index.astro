@@ -7,13 +7,13 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
 <BaseLayout>
   <div>pouet</div>
-  <h1>Bienvenue sur notre site</h1>
+  <h1>Bienvenue sur notre site :)</h1>
   <h2>{tr("site.translatable", "fr")}</h2>
-  <div>pouet</div>
+  <br/>pouet pouet
   <Intro />
   <Test />
 
-  <h2>Ce titre est genialissime<br />asdasds</h2>
+  <h2>Ce titre est genialissime</h2>
   <p>Ceci est un paragraphe</p>
   <ul>
     <li>1</li>
@@ -34,18 +34,18 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     >.
   </p>
   <ul style="list-style-type: '✅'">
-    <li>Calmer le mental :)</li>
-    <li>Se régénérer :)</li>
-    <li>Trouver le bon équilibre de vie</li>
-    <li>Se libérer de ses blocages émotionnels et comportementaux</li>
-    <li>
-      Gérer adéquatement ses réactions et ses émotions quand elles surviennent
-      <ul>
-        <li>Se sentir bien là où vous étiez inconfortable auparavant</li>
-      </ul>
-    </li>
-    <li>Reprendre confiance en soi</li>
-  </ul>
+  <li>Calmer le mental :)</li>
+  <li>Se régénérer :)</li>
+  <li>Trouver le bon équilibre de vie</li>
+  <li>Se libérer de ses blocages émotionnels et comportementaux</li>
+  <li>
+    Gérer adéquatement ses réactions et ses émotions quand elles surviennent
+    <ul>
+      <li>Se sentir bien là où vous étiez inconfortable auparavant</li>
+    </ul>
+  </li>
+  <li>Reprendre confiance en soi</li>
+</ul>
   <p>
     Here's a line with a manual<br />
     line break inside the paragraph.
@@ -69,17 +69,16 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     <li>Ordered item 3</li>
   </ol>
   <div style="border: 1px solid #ccc; padding: 1em; margin-top: 1em;">
-    <h2 style="margin-top: 0;">Card Title</h2>
-    <p>This is a card-style content block with a border and padding.</p>
-    <ul>
-      <li>Card list item</li>
-      <li>Another item</li>
-    </ul>
-    <h3>Final Notes</h3>
-    <p>
-      Test edge cases like empty tags: <span> </span>, or inline <code
-        >&lt;code&gt;</code
-      > blocks.
-    </p>
-  </div>
+  <h2 style="margin-top: 0;">Card Title</h2>
+  <p>This is a card-style content block with a border and padding.</p>
+  <ul>
+    <li>Card list item</li>
+    <li>Another item</li>
+  </ul>
+  <h3>Final Notes</h3>
+  <p>
+  Test edge cases like empty tags: <span>
+</span>, or inline <code>&lt;code&gt;</code> blocks.
+</p>
+</div>
 </BaseLayout>
