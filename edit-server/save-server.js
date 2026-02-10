@@ -16,22 +16,31 @@ const VOID_ELEMENTS = new Set([
 
 // Finds the entire tag (opening + content + closing) at the given (line, column) position in sourceText
 function findTagAtPosition(sourceText, line, column, expectedTagName) {
+  console.log(`    [findTagAtPosition] Searching for <${expectedTagName}> at line ${line}, column ${column}`);
   const lines = sourceText.split('\n');
   const lineIndex = line - 1;
-  if (lineIndex < 0 || lineIndex >= lines.length) return null;
+  if (lineIndex < 0 || lineIndex >= lines.length) {
+    console.log(`    [findTagAtPosition] ❌ Invalid line ${line} (lineIndex=${lineIndex}, total lines=${lines.length})`);
+    return null;
+  }
 
   const tagName = expectedTagName?.toLowerCase();
   const offset = lines
     .slice(0, lineIndex)
     .reduce((acc, l) => acc + l.length + 1, 0) + (column - 1);
+  
+  console.log(`    [findTagAtPosition] Calculated offset=${offset} from line ${line}, column ${column}`);
+  console.log(`    [findTagAtPosition] Context at offset: "${sourceText.substring(offset, offset + 50)}..."`);
 
   const tagRegex = new RegExp(`<${tagName}\\b[^>]*?>`, 'gi');
   tagRegex.lastIndex = 0;
 
   let match;
+  let matchCount = 0;
 
   // Scan through all opening tags matching expectedTagName
   while ((match = tagRegex.exec(sourceText)) !== null) {
+    matchCount++;
     const openTagStart = match.index;
     const openTagEnd = tagRegex.lastIndex;
 
@@ -40,6 +49,7 @@ function findTagAtPosition(sourceText, line, column, expectedTagName) {
     if (isSelfClosing) {
       // If the tag is self-closing, check if the cursor falls inside its bounds
       if (offset >= openTagStart && offset <= openTagEnd) {
+        console.log(`    [findTagAtPosition] ✅ Found self-closing tag (match ${matchCount}) at ${openTagStart}-${openTagEnd}`);
         return {
           tagName,
           outerStart: openTagStart,
@@ -50,12 +60,17 @@ function findTagAtPosition(sourceText, line, column, expectedTagName) {
     } else {
       // Find the matching close tag for non-void elements
       const closeTagOffset = findMatchingCloseTag(sourceText, openTagEnd, tagName);
-      if (closeTagOffset === -1) continue;
+      if (closeTagOffset === -1) {
+        console.log(`    [findTagAtPosition] No matching close tag for match ${matchCount} at ${openTagStart}`);
+        continue;
+      }
 
       const closeTagEnd = closeTagOffset + `</${tagName}>`.length;
 
       // Check if the cursor offset is inside the opening/closing tag range
       if (offset >= openTagEnd && offset < closeTagOffset) {
+        console.log(`    [findTagAtPosition] ✅ Found matching tag (match ${matchCount}) at ${openTagStart}-${closeTagEnd}`);
+        console.log(`    [findTagAtPosition] Tag content: "${sourceText.substring(openTagStart, Math.min(openTagStart + 100, closeTagEnd))}..."`);
         return {
           tagName,
           outerStart: openTagStart,
@@ -65,6 +80,7 @@ function findTagAtPosition(sourceText, line, column, expectedTagName) {
     }
   }
 
+  console.log(`    [findTagAtPosition] ❌ No matching tag found (scanned ${matchCount} candidates)`);
   return null; // No tag found containing the position
 }
 
@@ -141,23 +157,33 @@ app.post('/save', (req, res) => {
       const lines = sourceText.split('\n');
 
       if (isMarkdown) {
-        const { frontmatter, body, offset } = extractFrontmatter(lines);
+        const { frontmatter, offset } = extractFrontmatter(lines);
+        let body = extractFrontmatter(lines).body; // Use 'let' to allow reassignment
         
         // For HTML path: work with full sourceText string
         // For Markdown path: work with body line array
         let bodyAsString = null;
         let needsStringMode = false;
+        let usedMarkdownPromotion = false; // Track if we promoted markdown→HTML
         
         // Check if any change needs HTML mode
-        changes.forEach(({ start, content, tagName }) => {
-          if (hasAttributes(content, tagName)) {
+        console.log(`\n🔍 CHECKING ${changes.length} CHANGE(S) FOR ATTRIBUTES:`);
+        changes.forEach(({ start, content, tagName }, i) => {
+          const hasAttrs = hasAttributes(content, tagName);
+          console.log(`  Change ${i + 1}: <${tagName}> hasAttributes=${hasAttrs}`);
+          if (hasAttrs) {
+            console.log(`    → Content preview: ${content.substring(0, 80)}...`);
             needsStringMode = true;
           }
         });
         
         if (needsStringMode) {
+          console.log(`\n🔄 SWITCHING TO HTML MODE (string-based processing)`);
           // Convert body to string for findTagAtPosition
           bodyAsString = body.join('\n');
+          console.log(`  Body converted to string: ${bodyAsString.length} characters`);
+        } else {
+          console.log(`\n📝 USING MARKDOWN MODE (line-based processing)`);
         }
         
         changes
@@ -179,14 +205,39 @@ app.post('/save', (req, res) => {
             if (keepAsHTML && !isHeading) {
               // HTML PATH: Use Astro-style tag finding
               console.log(`  🏷️  Tag has attributes - using Astro logic for HTML`);
+              console.log(`    keepAsHTML=${keepAsHTML}, isHeading=${isHeading}`);
+              console.log(`    idx_line=${idx_line}, offset=${offset}, body.length=${body.length}`);
               
               // Line number relative to body (not full file)
               const bodyLine = idx_line + 1; // Convert to 1-indexed
+              console.log(`    Looking for tag at bodyLine=${bodyLine}, column=${start.column}`);
               
               const tagRange = findTagAtPosition(bodyAsString, bodyLine, start.column, tagName);
               if (!tagRange) {
-                console.warn(`  ❌ Could not find tag at body line ${bodyLine}:${start.column}`);
-                return;
+                // Tag not found in source → source is markdown, browser sent HTML with attributes
+                console.warn(`  ⚠️  Could not find <${tagName}> tag - source is markdown, converting to HTML`);
+                console.log(`    This is a markdown→HTML promotion (attributes require HTML)`);
+                
+                // Find the markdown block at this position
+                const { start: blockStart, end: blockEnd } = findMarkdownBlock(body, idx_line);
+                const oldMarkdown = body.slice(blockStart, blockEnd + 1).join('\n');
+                const oldPreview = oldMarkdown.length > 100 ? oldMarkdown.substring(0, 100) + '...' : oldMarkdown;
+                
+                // Collapse HTML to single line for MDX compatibility
+                const singleLineHTML = content.replace(/\n\s*/g, ' ').trim();
+                const newPreview = singleLineHTML.length > 100 ? singleLineHTML.substring(0, 100) + '...' : singleLineHTML;
+                
+                console.log(`  ✅ Markdown block found at lines ${blockStart + offset + 1}-${blockEnd + offset + 1}`);
+                console.log(`  🔴 OLD (markdown): ${oldPreview}`);
+                console.log(`  🟢 NEW (HTML): ${newPreview}`);
+                
+                // Replace the markdown block with HTML
+                body.splice(blockStart, blockEnd - blockStart + 1, singleLineHTML);
+                usedMarkdownPromotion = true; // Flag that we modified body array directly
+                
+                console.log(`    Promoted markdown to HTML - block replaced in body array`);
+                
+                return; // Done with this change (don't update bodyAsString)
               }
               
               console.log(`  ✅ Tag found at position ${tagRange.outerStart}-${tagRange.outerEnd}`);
@@ -201,8 +252,12 @@ app.post('/save', (req, res) => {
               console.log(`  🔴 OLD: ${oldPreview}`);
               console.log(`  🟢 NEW: ${newPreview}`);
               
+              console.log(`    Replacing content in bodyAsString...`);
+              const beforeLength = bodyAsString.length;
               // Replace in string
               bodyAsString = replaceOuterContent(bodyAsString, tagRange.outerStart, tagRange.outerEnd, singleLineHTML);
+              const afterLength = bodyAsString.length;
+              console.log(`    bodyAsString length: ${beforeLength} → ${afterLength} (diff: ${afterLength - beforeLength})`);
               
             } else {
               // MARKDOWN PATH: Convert to markdown syntax
@@ -241,13 +296,37 @@ app.post('/save', (req, res) => {
           });
         
         // If we used string mode, convert back to lines
-        if (needsStringMode && bodyAsString !== null) {
+        // UNLESS we used markdown promotion (which modifies body array directly)
+        if (needsStringMode && bodyAsString !== null && !usedMarkdownPromotion) {
+          console.log(`\n🔄 CONVERTING BACK TO LINES (string → array)`);
+          console.log(`  bodyAsString length: ${bodyAsString.length}`);
+          const linesBefore = body.length;
           body = bodyAsString.split('\n');
+          console.log(`  body lines: ${linesBefore} → ${body.length}`);
+          console.log(`  First 3 lines after conversion:`);
+          body.slice(0, 3).forEach((line, i) => {
+            console.log(`    ${i + 1}: ${line.substring(0, 80)}${line.length > 80 ? '...' : ''}`);
+          });
+        } else if (usedMarkdownPromotion) {
+          console.log(`\n✅ SKIPPING string→array conversion (used markdown promotion, body already modified)`);
         }
         
         const finalOutput = [...frontmatter, ...body].join('\n');
+        console.log(`\n📦 FINAL OUTPUT: ${finalOutput.length} characters, ${frontmatter.length + body.length} lines`);
+        console.log(`  Frontmatter lines: ${frontmatter.length}`);
+        console.log(`  Body lines: ${body.length}`);
+        
         fs.writeFileSync(fullPath, finalOutput, 'utf-8');
         console.log(`\n💾 File saved: ${file}`);
+        
+        // Verify write
+        const verifyContent = fs.readFileSync(fullPath, 'utf-8');
+        console.log(`✅ Verification: File on disk is ${verifyContent.length} characters`);
+        if (verifyContent === finalOutput) {
+          console.log(`✅ Write verified: Content matches what we wrote`);
+        } else {
+          console.error(`❌ Write mismatch: Disk content differs from what we tried to write!`);
+        }
       } else if (isAstro) {
         // For Astro files: find tag by start line/column and replace entire tag (outerHTML)
         changes
@@ -319,11 +398,16 @@ function hasAttributes(outerHTML, tagName) {
   const openTagRegex = new RegExp(`^<${tagName}\\b([^>]*?)(/?)>`, 'i');
   const match = outerHTML.trim().match(openTagRegex);
   
-  if (!match) return false;
+  if (!match) {
+    console.log(`    [hasAttributes] No match for <${tagName}> in: ${outerHTML.substring(0, 50)}...`);
+    return false;
+  }
   
   const attributesPart = match[1].trim();
+  const hasAttrs = attributesPart.length > 0;
+  console.log(`    [hasAttributes] <${tagName}> attributes="${attributesPart}" → ${hasAttrs}`);
   // If there's anything between tag name and closing >, it's an attribute
-  return attributesPart.length > 0;
+  return hasAttrs;
 }
 
 function preserveMarkdownPrefix(originalLine, newContent) {
