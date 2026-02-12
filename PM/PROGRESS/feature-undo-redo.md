@@ -1,8 +1,36 @@
 # Feature: Version History for Edit Sessions
 
-**Status:** Ready for development  
+**Status:** In Progress  
 **Priority:** High  
 **Complexity:** High  
+**Started:** 2026-02-12  
+**Branch:** `exp/undo-redo-try#1`
+
+---
+
+## Progress & Commits
+
+- ✅ Experiment started, feature moved to PROGRESS
+- ✅ Phase 1: Server-side versioning core complete (diff.js, versions.js, all API endpoints)
+- ✅ Phase 2: Client-side UI complete (save-button, version-sidebar, version-card components)
+- ✅ Phase 3: Version detail, diffs, restore — all wired up
+- ✅ Phase 4: Version management (delete all, editable labels, auto-labeling)
+
+---
+
+## Challenges & Lessons Learned
+
+### 1. JSDoc comment fragmentation during edit
+When inserting the `updateLabel` function above `restoreVersion`, the edit tool split the existing JSDoc comment for `restoreVersion`, leaving orphaned `* ...` lines outside any comment block. This caused a `SyntaxError: Unexpected token '*'` at runtime. **Lesson:** When inserting code above a function that has a JSDoc comment, include the full JSDoc in the replacement to avoid fragmentation.
+
+### 2. `const` hoisting / temporal dead zone
+The original refactor placed `updateSaveIndicator()` (which references `saveButtonUI`) above where `saveButtonUI` was declared with `const`. While `function` declarations are hoisted, `const` bindings are not — they exist in the "temporal dead zone" until their declaration is evaluated. If a `MutationObserver` fired during element setup (between the function definition and the `const` declaration), it would crash. **Fix:** Moved `saveButtonUI` creation above all code that references it, before the element setup loop.
+
+### 3. Script loading: `is:inline` vs `type="module"`
+`live-edit.js` was loaded as `<script is:inline src="/live-edit.js" />` — a plain script, not a module. ES `import` statements don't work in non-module scripts. Changed to `<script is:inline type="module" src="/live-edit.js" />`. The `_suppressObserver` variable (previously a true global `let`) becomes module-scoped, but since it's only used within `live-edit.js` itself, this is safe.
+
+### 4. Port conflicts during testing
+The edit server uses port 3000. Testing with `node edit-server/save-server.js` while a previous instance was still running caused `EADDRINUSE`. **Lesson:** Always check for and kill existing processes on the target port before starting a new server instance during testing.
 
 ---
 

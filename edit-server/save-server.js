@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import cors from 'cors';
 import TurndownService from 'turndown';
+import * as versions from './versions.js';
 
 const app = express();
 app.use(express.json());
@@ -344,10 +345,15 @@ app.post('/save', (req, res) => {
       console.log('----------------------------------------');
     }
 
+    // Create version snapshot of the saved files
+    const savedFiles = Object.keys(changesByFile).map(f => path.resolve(f));
+    const version = versions.createVersion(savedFiles);
+    console.log(`📸 Version v${version.id} created: "${version.label}"`);
+
     console.log('\n✅ ========================================');
     console.log('✅ All changes saved successfully!');
     console.log('========================================\n');
-    res.sendStatus(200);
+    res.json({ ok: true, version });
   } catch (err) {
     console.error('\n❌ ========================================');
     console.error('❌ Error saving file:');
@@ -355,6 +361,78 @@ app.post('/save', (req, res) => {
     console.error('========================================\n');
     res.status(500).send('Failed to save');
   }
+});
+
+// ============================
+// Version History API
+// ============================
+
+// Create baseline (v0) from files currently rendered on page
+app.post('/api/versions/baseline', (req, res) => {
+  const { files } = req.body;
+  if (!Array.isArray(files) || files.length === 0) {
+    return res.status(400).json({ error: 'Expected { files: ["/abs/path/..."] }' });
+  }
+  const entry = versions.createBaseline(files);
+  console.log(`📸 Baseline v0: ${entry.fileCount} files`);
+  res.json(entry);
+});
+
+// List all versions (lightweight)
+app.get('/api/versions', (_req, res) => {
+  res.json(versions.listVersions());
+});
+
+// Get version details with diffs
+app.get('/api/versions/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid version ID' });
+
+  const details = versions.getVersionDetails(id);
+  if (!details) return res.status(404).json({ error: 'Version not found' });
+
+  res.json(details);
+});
+
+// Delete a specific version
+app.delete('/api/versions/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid version ID' });
+
+  const deleted = versions.deleteVersion(id);
+  if (!deleted) return res.status(404).json({ error: 'Version not found' });
+
+  res.json({ ok: true });
+});
+
+// Delete all versions
+app.delete('/api/versions', (_req, res) => {
+  versions.deleteAllVersions();
+  res.json({ ok: true });
+});
+
+// Restore a version
+app.post('/api/versions/:id/restore', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid version ID' });
+
+  const result = versions.restoreVersion(id);
+  if (!result) return res.status(404).json({ error: 'Version not found' });
+
+  res.json(result);
+});
+
+// Update version label
+app.patch('/api/versions/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { label } = req.body;
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid version ID' });
+  if (typeof label !== 'string') return res.status(400).json({ error: 'Expected { label: "..." }' });
+
+  const updated = versions.updateLabel(id, label);
+  if (!updated) return res.status(404).json({ error: 'Version not found' });
+
+  res.json({ ok: true, label });
 });
 
 app.listen(3000, () => {
