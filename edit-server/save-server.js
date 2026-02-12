@@ -387,6 +387,11 @@ app.get('/api/versions', (_req, res) => {
   res.json(versions.listVersions());
 });
 
+// Current diff (live files vs latest snapshot) — must be before :id route
+app.get('/api/versions/current-diff', (_req, res) => {
+  res.json(versions.getCurrentDiff());
+});
+
 // Get version details with diffs
 app.get('/api/versions/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);

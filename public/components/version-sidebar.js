@@ -123,6 +123,56 @@ export function createVersionSidebar() {
       const versionsList = await res.json();
       cardList.innerHTML = '';
 
+      // "Currently editing" card — always at top
+      const currentCard = document.createElement('div');
+      Object.assign(currentCard.style, {
+        padding: '10px 12px',
+        marginBottom: '8px',
+        background: '#1a2a3a',
+        borderRadius: '6px',
+        borderLeft: '3px solid #68f',
+        cursor: 'pointer',
+        transition: 'background 0.15s',
+        fontSize: '13px',
+        color: '#8af',
+        fontWeight: 'bold',
+      });
+      currentCard.addEventListener('mouseenter', () => { currentCard.style.background = '#2a3a4a'; });
+      currentCard.addEventListener('mouseleave', () => { currentCard.style.background = '#1a2a3a'; });
+      currentCard.textContent = '✏️ Currently editing';
+
+      const currentDiffContainer = document.createElement('div');
+      currentDiffContainer.style.display = 'none';
+      currentCard.appendChild(currentDiffContainer);
+
+      currentCard.addEventListener('click', async () => {
+        if (currentDiffContainer.style.display !== 'none') {
+          currentDiffContainer.style.display = 'none';
+          return;
+        }
+        currentDiffContainer.style.display = 'block';
+        currentDiffContainer.innerHTML = '<div style="color:#888;font-size:11px;padding:4px">Loading diffs...</div>';
+        try {
+          const res = await fetch(`${API_BASE}/api/versions/current-diff`);
+          const data = await res.json();
+          currentDiffContainer.innerHTML = '';
+          Object.assign(currentDiffContainer.style, {
+            marginTop: '8px',
+            borderTop: '1px solid #444',
+            paddingTop: '8px',
+          });
+          if (data.diffs.length === 0) {
+            currentDiffContainer.innerHTML = '<div style="color:#888;font-size:11px">No changes since last save</div>';
+            return;
+          }
+          renderDiffDetails(currentDiffContainer, { diffs: data.diffs }, { onRestore: null, onDelete: null });
+        } catch (err) {
+          currentDiffContainer.innerHTML = `<div style="color:#c66;font-size:11px">Failed to load: ${err.message}</div>`;
+        }
+      });
+
+      cardList.appendChild(currentCard);
+
       if (versionsList.length === 0) {
         const empty = document.createElement('div');
         empty.textContent = 'No versions yet. Save to create one.';
@@ -174,14 +224,12 @@ export function createVersionSidebar() {
 
   async function restoreVersion(id) {
     try {
-      const res = await fetch(`${API_BASE}/api/versions/${id}/restore`, { method: 'POST' });
-      const result = await res.json();
-      alert(`Restored to v${id}. Current state saved as v${result.backupVersionId}.`);
+      await fetch(`${API_BASE}/api/versions/${id}/restore`, { method: 'POST' });
       // Clear cache and reload
       Object.keys(detailsCache).forEach(k => delete detailsCache[k]);
       window.location.reload();
     } catch (err) {
-      alert(`Restore failed: ${err.message}`);
+      console.error(`Restore failed: ${err.message}`);
     }
   }
 
@@ -191,7 +239,7 @@ export function createVersionSidebar() {
       delete detailsCache[id];
       loadVersions();
     } catch (err) {
-      alert(`Delete failed: ${err.message}`);
+      console.error(`Delete failed: ${err.message}`);
     }
   }
 

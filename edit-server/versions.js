@@ -70,16 +70,18 @@ function getStorageSize(dir = VERSIONS_DIR) {
 }
 
 /**
- * Create a baseline (v0) version from a list of file paths.
- * Only creates if no versions exist yet.
- * Returns the created version entry, or existing v0 if already present.
+ * Create or refresh baseline (v0) version from a list of file paths.
+ * Always re-snapshots files so baseline stays fresh across page navigations
+ * and server restarts.
  */
 export function createBaseline(filePaths) {
   const manifest = readManifest();
 
-  // If baseline already exists, return it
-  const existing = manifest.find(v => v.id === 0);
-  if (existing) return existing;
+  // Remove existing v0 snapshot directory if present
+  const v0Dir = path.join(VERSIONS_DIR, 'v0');
+  if (fs.existsSync(v0Dir)) {
+    fs.rmSync(v0Dir, { recursive: true, force: true });
+  }
 
   const snapshotted = snapshotFiles(0, filePaths);
   const entry = {
@@ -90,7 +92,13 @@ export function createBaseline(filePaths) {
     fileCount: snapshotted.length
   };
 
-  manifest.push(entry);
+  // Replace or add v0 in manifest
+  const idx = manifest.findIndex(v => v.id === 0);
+  if (idx !== -1) {
+    manifest[idx] = entry;
+  } else {
+    manifest.push(entry);
+  }
   writeManifest(manifest);
   return entry;
 }
@@ -256,7 +264,8 @@ export function updateLabel(id, label) {
 
 /**
  * Restore files from a version snapshot back to their original locations.
- * Creates a new version (capturing current state) before restoring.
+ * Creates a new version (capturing current state) before restoring,
+ * unless current state is identical to the previous version.
  */
 export function restoreVersion(id) {
   const manifest = readManifest();
@@ -266,19 +275,23 @@ export function restoreVersion(id) {
   const versionDir = path.join(VERSIONS_DIR, `v${id}`, 'files');
   if (!fs.existsSync(versionDir)) return null;
 
-  // First, snapshot current state of the files we're about to overwrite
+  // Snapshot current state of the files we're about to overwrite
   const currentFiles = version.files.map(f => path.resolve(f));
   const backupVersion = createVersion(currentFiles);
-  backupVersion.label = `Before restore to v${id}`;
-  // Update the label in manifest
-  const updatedManifest = readManifest();
-  const backupIdx = updatedManifest.findIndex(v => v.id === backupVersion.id);
-  if (backupIdx !== -1) {
-    updatedManifest[backupIdx].label = backupVersion.label;
-    writeManifest(updatedManifest);
+  let backupVersionId = null;
+
+  if (backupVersion) {
+    backupVersion.label = `Before restore to v${id}`;
+    const updatedManifest = readManifest();
+    const backupIdx = updatedManifest.findIndex(v => v.id === backupVersion.id);
+    if (backupIdx !== -1) {
+      updatedManifest[backupIdx].label = backupVersion.label;
+      writeManifest(updatedManifest);
+    }
+    backupVersionId = backupVersion.id;
   }
 
-  // Now restore files from the snapshot
+  // Restore files from the snapshot
   const restored = [];
   for (const relPath of version.files) {
     const srcPath = path.join(versionDir, relPath);
@@ -293,6 +306,45 @@ export function restoreVersion(id) {
 
   return {
     restored,
-    backupVersionId: backupVersion.id
+    backupVersionId
   };
+}
+
+/**
+ * Get diff of current live files on disk vs the latest version snapshot.
+ * Used by the "Currently editing" card to show unsaved changes.
+ */
+export function getCurrentDiff() {
+  const manifest = readManifest();
+  if (manifest.length === 0) return { comparedTo: null, diffs: [] };
+
+  const sorted = [...manifest].sort((a, b) => a.id - b.id);
+  const latest = sorted[sorted.length - 1];
+  const latestDir = path.join(VERSIONS_DIR, `v${latest.id}`, 'files');
+
+  if (!fs.existsSync(latestDir)) return { comparedTo: latest.id, diffs: [] };
+
+  const diffs = [];
+  for (const relPath of latest.files) {
+    const snapshotPath = path.join(latestDir, relPath);
+    const livePath = path.resolve(relPath);
+
+    const snapshotContent = fs.existsSync(snapshotPath)
+      ? fs.readFileSync(snapshotPath, 'utf-8')
+      : '';
+    const liveContent = fs.existsSync(livePath)
+      ? fs.readFileSync(livePath, 'utf-8')
+      : '';
+
+    const diff = diffLines(snapshotContent, liveContent);
+    if (diff.hunks.length > 0) {
+      diffs.push({
+        file: relPath,
+        stats: diff.stats,
+        hunks: diff.hunks
+      });
+    }
+  }
+
+  return { comparedTo: latest.id, diffs };
 }

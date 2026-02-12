@@ -142,7 +142,7 @@ Currently, when users save edits, there's no record of previous states. If they 
 
 ---
 
-## F0r Developer
+## For Developer
 
 0. UI Design System: each time you need a new UI component, make it a specific .js file that will load the specific component (HTML+CSS+JS) when needed. We are using Vanilla JS here.
 0.1 We refactor components to make them reusable when we see a fit.
@@ -154,7 +154,7 @@ Currently, when users save edits, there's no record of previous states. If they 
 5. Cleanup: User can delete specific version, limit the number of saved versions in the history, and delete all versions, by clicking on a "⋮" UI button that will enable it.
 
 
- Checkpoint #1
+##  Checkpoint #1
 
   <overview>
   The user is building a **Version History system** for the Astro Live Edit project — a

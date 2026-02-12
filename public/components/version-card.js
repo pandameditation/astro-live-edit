@@ -213,57 +213,55 @@ export function renderDiffDetails(container, details, { onRestore, onDelete }) {
     container.appendChild(diffLines);
   }
 
-  // Action buttons row
-  const actionsRow = document.createElement('div');
-  Object.assign(actionsRow.style, {
-    display: 'flex',
-    gap: '6px',
-    marginTop: '8px',
-  });
+  // Action buttons row (skip when handlers are null — e.g. "Currently editing" card)
+  if (onRestore || onDelete) {
+    const actionsRow = document.createElement('div');
+    Object.assign(actionsRow.style, {
+      display: 'flex',
+      gap: '6px',
+      marginTop: '8px',
+    });
 
-  // Restore button
-  const restoreBtn = document.createElement('button');
-  restoreBtn.textContent = '↩ Restore this version';
-  Object.assign(restoreBtn.style, {
-    flex: '1',
-    padding: '4px 10px',
-    background: '#3a5a3a',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '12px',
-  });
-  restoreBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (confirm(`Restore to v${details.id}? Current files will be saved as a new version first.`)) {
+    // Restore button
+    const restoreBtn = document.createElement('button');
+    restoreBtn.textContent = '↩ Restore this version';
+    Object.assign(restoreBtn.style, {
+      flex: '1',
+      padding: '4px 10px',
+      background: '#3a5a3a',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      fontSize: '12px',
+    });
+    restoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       onRestore(details.id);
-    }
-  });
+    });
 
-  // Delete button
-  const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = '🗑';
-  Object.assign(deleteBtn.style, {
-    padding: '4px 10px',
-    background: '#5a2a2a',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '12px',
-  });
-  deleteBtn.title = 'Delete this version';
-  deleteBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (confirm(`Delete v${details.id}? This cannot be undone.`)) {
+    // Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = '🗑';
+    Object.assign(deleteBtn.style, {
+      padding: '4px 10px',
+      background: '#5a2a2a',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      fontSize: '12px',
+    });
+    deleteBtn.title = 'Delete this version';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       onDelete(details.id);
-    }
-  });
+    });
 
-  actionsRow.appendChild(restoreBtn);
-  actionsRow.appendChild(deleteBtn);
-  container.appendChild(actionsRow);
+    actionsRow.appendChild(restoreBtn);
+    actionsRow.appendChild(deleteBtn);
+    container.appendChild(actionsRow);
+  }
 }
 
 function formatTime(date) {
