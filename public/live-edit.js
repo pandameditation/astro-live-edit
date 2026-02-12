@@ -9,8 +9,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Shared change-tracking logic used by both blur and MutationObserver
   function trackChange(el) {
     const last = lastSavedContent.get(el);
-    if (last === el.outerHTML) return;
-    lastSavedContent.set(el, el.outerHTML);
+    const current = stripTrackingAttrs(el.outerHTML);
+    if (last === current) return;
+    lastSavedContent.set(el, current);
 
     const file = el.getAttribute('data-source-file');
     const loc = el.getAttribute('data-source-loc');
@@ -58,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Pass 2: Snapshot and attach listeners after all contenteditable attrs are set
   editableElements.forEach(el => {
-    lastSavedContent.set(el, el.outerHTML);
+    lastSavedContent.set(el, stripTrackingAttrs(el.outerHTML));
 
     el.addEventListener('blur', () => trackChange(el));
 
@@ -279,14 +280,19 @@ document.addEventListener('keydown', function (e) {
 // ####### UTILITY FUNCTIONS #########
 //####################################
 
-
-function cleanPlusBeautifyHTML(HTML) {
-  // 1. Remove unwanted attributes
-  const rawHTML = HTML
-  const cleaned = rawHTML
+// Strips all live-edit tracking attributes from HTML strings.
+// Used for both change-detection comparison and save payload cleaning.
+function stripTrackingAttrs(html) {
+  return html
+    .replace(/\sdata-astro-source-[\w-]+="[^"]*"/g, '')
     .replace(/\sdata-source-[\w-]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '')
     .replace(/\scontenteditable(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '')
     .replace(/\sclass="[^"]*\bdata-indentable\b[^"]*"/gi, '');
+}
+
+function cleanPlusBeautifyHTML(HTML) {
+  // 1. Remove tracking/editing attributes
+  const cleaned = stripTrackingAttrs(HTML);
 
 
   // 2. Decode entities without DOM pollution
