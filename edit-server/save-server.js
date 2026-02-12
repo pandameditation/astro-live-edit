@@ -6,8 +6,8 @@ import TurndownService from 'turndown';
 import * as versions from './versions.js';
 
 const app = express();
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
 // List of HTML void elements that are self-closing by nature
 const VOID_ELEMENTS = new Set([
@@ -348,12 +348,16 @@ app.post('/save', (req, res) => {
     // Create version snapshot of the saved files
     const savedFiles = Object.keys(changesByFile).map(f => path.resolve(f));
     const version = versions.createVersion(savedFiles);
-    console.log(`📸 Version v${version.id} created: "${version.label}"`);
+    if (version) {
+      console.log(`📸 Version v${version.id} created: "${version.label}"`);
+    } else {
+      console.log(`📸 No content changes detected — version not created`);
+    }
 
     console.log('\n✅ ========================================');
     console.log('✅ All changes saved successfully!');
     console.log('========================================\n');
-    res.json({ ok: true, version });
+    res.json({ ok: true, version: version || null });
   } catch (err) {
     console.error('\n❌ ========================================');
     console.error('❌ Error saving file:');

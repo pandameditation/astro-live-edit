@@ -157,7 +157,7 @@ export function createVersionSidebar() {
   async function loadDiffDetails(id, container) {
     // Check cache
     if (detailsCache[id]) {
-      renderDiffDetails(container, detailsCache[id], { onRestore: restoreVersion });
+      renderDiffDetails(container, detailsCache[id], { onRestore: restoreVersion, onDelete: deleteAndReload });
       return;
     }
 
@@ -166,7 +166,7 @@ export function createVersionSidebar() {
       const res = await fetch(`${API_BASE}/api/versions/${id}`);
       const details = await res.json();
       detailsCache[id] = details;
-      renderDiffDetails(container, details, { onRestore: restoreVersion });
+      renderDiffDetails(container, details, { onRestore: restoreVersion, onDelete: deleteAndReload });
     } catch (err) {
       container.innerHTML = `<div style="color:#c66;font-size:11px">Failed to load: ${err.message}</div>`;
     }

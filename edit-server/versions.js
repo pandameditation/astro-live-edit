@@ -106,6 +106,25 @@ export function createVersion(changedFiles) {
 
   const snapshotted = snapshotFiles(id, changedFiles);
 
+  // Check if anything actually changed vs previous version
+  const sorted = [...manifest].sort((a, b) => a.id - b.id);
+  const prevVersion = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+  if (prevVersion) {
+    const prevDir = path.join(VERSIONS_DIR, `v${prevVersion.id}`, 'files');
+    const currDir = path.join(VERSIONS_DIR, `v${id}`, 'files');
+    const hasAnyChange = snapshotted.some(relPath => {
+      const currFile = path.join(currDir, relPath);
+      const prevFile = path.join(prevDir, relPath);
+      if (!fs.existsSync(prevFile)) return true; // new file = change
+      return fs.readFileSync(currFile, 'utf-8') !== fs.readFileSync(prevFile, 'utf-8');
+    });
+    if (!hasAnyChange) {
+      // No actual changes — clean up and skip
+      fs.rmSync(path.join(VERSIONS_DIR, `v${id}`), { recursive: true, force: true });
+      return null;
+    }
+  }
+
   // Auto-label
   const label = snapshotted.length === 1
     ? `Updated ${path.basename(snapshotted[0])}`

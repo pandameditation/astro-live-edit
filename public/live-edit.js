@@ -102,6 +102,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const editableElements = [];
   // Pass 1: Set up contentEditable on all elements first
   document.querySelectorAll(editableTags).forEach(el => {
+    // Only elements with source tracking are editable
+    if (!el.getAttribute('data-source-file')) return;
     if (el.getAttribute('data-dynamic') === 'true') {
       el.contentEditable = false;
       el.style.opacity = '0.6';

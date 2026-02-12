@@ -126,7 +126,7 @@ export function createVersionCard(version, { onRestore, onDelete, onRename, onTo
 /**
  * Render diff details into a container
  */
-export function renderDiffDetails(container, details, { onRestore }) {
+export function renderDiffDetails(container, details, { onRestore, onDelete }) {
   container.innerHTML = '';
   Object.assign(container.style, {
     marginTop: '8px',
@@ -213,11 +213,19 @@ export function renderDiffDetails(container, details, { onRestore }) {
     container.appendChild(diffLines);
   }
 
+  // Action buttons row
+  const actionsRow = document.createElement('div');
+  Object.assign(actionsRow.style, {
+    display: 'flex',
+    gap: '6px',
+    marginTop: '8px',
+  });
+
   // Restore button
   const restoreBtn = document.createElement('button');
   restoreBtn.textContent = '↩ Restore this version';
   Object.assign(restoreBtn.style, {
-    marginTop: '8px',
+    flex: '1',
     padding: '4px 10px',
     background: '#3a5a3a',
     color: '#fff',
@@ -225,7 +233,6 @@ export function renderDiffDetails(container, details, { onRestore }) {
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '12px',
-    width: '100%',
   });
   restoreBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -233,7 +240,30 @@ export function renderDiffDetails(container, details, { onRestore }) {
       onRestore(details.id);
     }
   });
-  container.appendChild(restoreBtn);
+
+  // Delete button
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '🗑';
+  Object.assign(deleteBtn.style, {
+    padding: '4px 10px',
+    background: '#5a2a2a',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+  });
+  deleteBtn.title = 'Delete this version';
+  deleteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (confirm(`Delete v${details.id}? This cannot be undone.`)) {
+      onDelete(details.id);
+    }
+  });
+
+  actionsRow.appendChild(restoreBtn);
+  actionsRow.appendChild(deleteBtn);
+  container.appendChild(actionsRow);
 }
 
 function formatTime(date) {
