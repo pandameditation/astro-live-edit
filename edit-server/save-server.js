@@ -166,12 +166,14 @@ app.post('/save', (req, res) => {
         let bodyAsString = null;
         let needsStringMode = false;
         
-        // Check if any change needs HTML mode
+        // Check if any non-heading change needs HTML mode
+        // Headings always use the markdown path, so their attributes don't trigger string mode
         console.log(`\n🔍 CHECKING ${changes.length} CHANGE(S) FOR ATTRIBUTES:`);
         changes.forEach(({ start, content, tagName }, i) => {
           const hasAttrs = hasAttributes(content, tagName);
-          console.log(`  Change ${i + 1}: <${tagName}> hasAttributes=${hasAttrs}`);
-          if (hasAttrs) {
+          const isHeading = /^h[1-6]$/i.test(tagName);
+          console.log(`  Change ${i + 1}: <${tagName}> hasAttributes=${hasAttrs} isHeading=${isHeading}`);
+          if (hasAttrs && !isHeading) {
             console.log(`    → Content preview: ${content.substring(0, 80)}...`);
             needsStringMode = true;
           }
