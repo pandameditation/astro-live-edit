@@ -42,8 +42,9 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSaveIndicator();
   }
 
+  const editableElements = [];
+  // Pass 1: Set up contentEditable on all elements first
   document.querySelectorAll(editableTags).forEach(el => {
-    // Skip elements with dynamic template expressions
     if (el.getAttribute('data-dynamic') === 'true') {
       el.contentEditable = false;
       el.style.opacity = '0.6';
@@ -52,12 +53,15 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     el.contentEditable = true;
+    editableElements.push(el);
+  });
+
+  // Pass 2: Snapshot and attach listeners after all contenteditable attrs are set
+  editableElements.forEach(el => {
     lastSavedContent.set(el, el.outerHTML);
 
-    // Blur handler (existing behavior, now delegates to shared function)
     el.addEventListener('blur', () => trackChange(el));
 
-    // MutationObserver for detecting DevTools / external DOM changes
     const observer = new MutationObserver(() => {
       if (_suppressObserver) return;
       clearTimeout(debounceTimers.get(el));
