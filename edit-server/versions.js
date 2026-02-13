@@ -112,6 +112,9 @@ export function createBaseline(filePaths) {
 
 /**
  * Create a new version snapshot after a save.
+ * Snapshots ALL tracked files (from origin) so each version is a complete,
+ * self-contained snapshot of the world state. Only the changedFiles list
+ * is used for the auto-label.
  * Sets checkpoint to this version.
  * @param {string[]} changedFiles - absolute paths of files that were just saved
  * @returns {object} the new version entry
@@ -120,7 +123,15 @@ export function createVersion(changedFiles) {
   const manifest = readManifest();
   const id = getNextId(manifest);
 
-  const snapshotted = snapshotFiles(id, changedFiles);
+  // Get the full set of tracked files from origin
+  const origin = manifest.find(v => v.id === 0);
+  const allTrackedFiles = origin ? origin.files.map(f => path.resolve(f)) : [];
+
+  // Merge: all origin files + any new files from this save
+  const fullSet = new Set(allTrackedFiles);
+  for (const f of changedFiles) fullSet.add(path.resolve(f));
+
+  const snapshotted = snapshotFiles(id, [...fullSet]);
 
   // Check if anything actually changed vs previous version
   const sorted = [...manifest].sort((a, b) => a.id - b.id);
@@ -131,20 +142,20 @@ export function createVersion(changedFiles) {
     const hasAnyChange = snapshotted.some(relPath => {
       const currFile = path.join(currDir, relPath);
       const prevFile = path.join(prevDir, relPath);
-      if (!fs.existsSync(prevFile)) return true; // new file = change
+      if (!fs.existsSync(prevFile)) return true;
       return fs.readFileSync(currFile, 'utf-8') !== fs.readFileSync(prevFile, 'utf-8');
     });
     if (!hasAnyChange) {
-      // No actual changes — clean up and skip
       fs.rmSync(path.join(VERSIONS_DIR, `v${id}`), { recursive: true, force: true });
       return null;
     }
   }
 
-  // Auto-label
-  const label = snapshotted.length === 1
-    ? `Updated ${path.basename(snapshotted[0])}`
-    : `Updated ${snapshotted.length} files`;
+  // Auto-label based on which files were actually changed in this save
+  const changedRelPaths = changedFiles.map(f => path.relative(process.cwd(), path.resolve(f)));
+  const label = changedRelPaths.length === 1
+    ? `Updated ${path.basename(changedRelPaths[0])}`
+    : `Updated ${changedRelPaths.length} files`;
 
   const entry = {
     id,
@@ -176,7 +187,7 @@ export function listVersions() {
 
 /**
  * Get version details including file-by-file diffs against the checkpoint.
- * The checkpoint version itself will naturally show no diffs.
+ * Each version is a complete snapshot, so diffs are straightforward file comparisons.
  */
 export function getVersionDetails(id) {
   const manifest = readManifest();
@@ -193,37 +204,24 @@ export function getVersionDetails(id) {
   }
 
   // Diff against the checkpoint version
-  const checkpointVersion = checkpointId !== null
-    ? manifest.find(v => v.id === checkpointId)
-    : null;
-  const refDir = checkpointVersion
+  const checkpointDir = checkpointId !== null
     ? path.join(VERSIONS_DIR, `v${checkpointId}`, 'files')
     : null;
 
-  // Use union of files from this version and the checkpoint
-  const allFiles = new Set(version.files);
-  if (checkpointVersion) {
-    for (const f of checkpointVersion.files) allFiles.add(f);
-  }
-
   // Compute diffs per file
   const diffs = [];
-  for (const relPath of allFiles) {
-    const currentPath = path.join(versionDir, relPath);
-    const currentContent = fs.existsSync(currentPath)
-      ? fs.readFileSync(currentPath, 'utf-8')
-      : '';
+  for (const relPath of version.files) {
+    const currentContent = fs.readFileSync(path.join(versionDir, relPath), 'utf-8');
 
     let refContent = '';
-    if (refDir) {
-      const refPath = path.join(refDir, relPath);
+    if (checkpointDir) {
+      const refPath = path.join(checkpointDir, relPath);
       if (fs.existsSync(refPath)) {
         refContent = fs.readFileSync(refPath, 'utf-8');
       }
     }
 
     const diff = diffLines(refContent, currentContent);
-
     if (diff.hunks.length > 0) {
       diffs.push({
         file: relPath,
@@ -293,8 +291,7 @@ export function updateLabel(id, label) {
 
 /**
  * Restore files from a version snapshot back to their original locations.
- * Also reverts any files that were changed in later versions but not in this one,
- * by restoring them from the origin (v0) snapshot.
+ * Each version is a complete snapshot, so all tracked files are restored.
  * Sets checkpoint to the restored version (no backup snapshot created).
  */
 export function restoreVersion(id) {
@@ -305,25 +302,9 @@ export function restoreVersion(id) {
   const versionDir = path.join(VERSIONS_DIR, `v${id}`, 'files');
   if (!fs.existsSync(versionDir)) return null;
 
-  // Collect all files that any version has ever tracked
-  const allTrackedFiles = new Set();
-  for (const v of manifest) {
-    for (const f of v.files) allTrackedFiles.add(f);
-  }
-
   const restored = [];
-  const versionFiles = new Set(version.files);
-
-  for (const relPath of allTrackedFiles) {
-    let srcPath;
-    if (versionFiles.has(relPath)) {
-      // File exists in target version — use it
-      srcPath = path.join(versionDir, relPath);
-    } else {
-      // File not in target version — fall back to origin (v0)
-      srcPath = path.join(VERSIONS_DIR, 'v0', 'files', relPath);
-    }
-
+  for (const relPath of version.files) {
+    const srcPath = path.join(versionDir, relPath);
     if (!fs.existsSync(srcPath)) continue;
 
     const destPath = path.resolve(relPath);
@@ -332,15 +313,13 @@ export function restoreVersion(id) {
     restored.push(relPath);
   }
 
-  // Set checkpoint to the restored version
   writeCheckpoint(id);
-
   return { restored };
 }
 
 /**
  * Get diff of current live files on disk vs the checkpoint version.
- * Checkpoint = latest save or latest restore (whichever happened most recently).
+ * Each version is a complete snapshot, so just compare directly.
  */
 export function getCurrentDiff() {
   const manifest = readManifest();
@@ -359,11 +338,11 @@ export function getCurrentDiff() {
   const diffs = [];
   for (const relPath of checkpoint.files) {
     const snapshotPath = path.join(checkpointDir, relPath);
-    const livePath = path.resolve(relPath);
-
     const snapshotContent = fs.existsSync(snapshotPath)
       ? fs.readFileSync(snapshotPath, 'utf-8')
       : '';
+
+    const livePath = path.resolve(relPath);
     const liveContent = fs.existsSync(livePath)
       ? fs.readFileSync(livePath, 'utf-8')
       : '';
