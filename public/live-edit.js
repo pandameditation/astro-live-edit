@@ -1,3 +1,6 @@
+import { createSaveButton } from './components/save-button.js';
+import { createVersionSidebar, createBaselineFromPage } from './components/version-sidebar.js';
+
 let _suppressObserver = false;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -6,6 +9,59 @@ document.addEventListener('DOMContentLoaded', () => {
   const changes = [];
   const debounceTimers = new WeakMap();
   markIndentableLists();
+
+  // Version sidebar
+  const versionSidebar = createVersionSidebar({ getChanges: () => changes });
+
+  // Unsaved changes visual indicator on save button
+  function updateSaveIndicator() {
+    saveButtonUI.setUnsaved(changes.length > 0);
+  }
+
+  // Save button (menu button with chevron for version history)
+  const saveButtonUI = createSaveButton({
+    onSave: async () => {
+      console.log('💾 Saving changes...');
+      console.log(`Total changes to save: ${changes.length}`);
+      
+      changes.forEach((change, idx) => {
+        const preview = change.content.length > 200 
+          ? change.content.substring(0, 200) + '...'
+          : change.content;
+        console.log(`\nChange ${idx + 1}:`);
+        console.log(`  File: ${change.file}`);
+        console.log(`  Location: ${change.loc}`);
+        console.log(`  Tag: ${change.tagName}`);
+        console.log(`  Content preview: ${preview}`);
+      });
+      
+      console.log('\n🚀 Complete JSON payload being sent:');
+      console.log(JSON.stringify(changes, null, 2));
+      
+      try {
+        const response = await fetch('http://localhost:3000/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(changes)
+        });
+
+        if (response.ok) {
+          console.log('✅ Changes saved successfully!');
+          changes.length = 0;
+          updateSaveIndicator();
+          versionSidebar.refresh();
+        } else {
+          console.error('❌ Save failed:', response.status, response.statusText);
+          alert(`Save failed: ${response.status} ${response.statusText}`);
+        }
+      } catch (error) {
+        console.error('❌ Network error during save:', error);
+        alert(`Save failed: ${error.message}`);
+      }
+    },
+    onToggleVersions: () => versionSidebar.toggle(),
+  });
+
   // Shared change-tracking logic used by both blur and MutationObserver
   function trackChange(el) {
     const last = lastSavedContent.get(el);
@@ -36,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       changes.push({ file, loc, tagName, content });
     }
+    versionSidebar.updatePending();
 
     console.log('📦 Payload metadata:');
     console.log({ file, loc, tagName, contentLength: content.length });
@@ -46,6 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const editableElements = [];
   // Pass 1: Set up contentEditable on all elements first
   document.querySelectorAll(editableTags).forEach(el => {
+    // Only elements with source tracking are editable
+    if (!el.getAttribute('data-source-file')) return;
     if (el.getAttribute('data-dynamic') === 'true') {
       el.contentEditable = false;
       el.style.opacity = '0.6';
@@ -71,78 +130,8 @@ document.addEventListener('DOMContentLoaded', () => {
     observer.observe(el, { childList: true, characterData: true, subtree: true });
   });
 
-  // Unsaved changes visual indicator on save button
-  function updateSaveIndicator() {
-    if (!saveBtn) return;
-    if (changes.length > 0) {
-      saveBtn.textContent = '💾 Save •';
-      saveBtn.style.boxShadow = '0 0 8px 2px rgba(255, 200, 0, 0.6)';
-    } else {
-      saveBtn.textContent = '💾 Save';
-      saveBtn.style.boxShadow = 'none';
-    }
-  }
-
-  const saveBtn = document.createElement('button');
-  saveBtn.textContent = '💾 Save';
-  Object.assign(saveBtn.style, {
-    position: 'fixed',
-    bottom: '20px',
-    right: '20px',
-    padding: '10px 20px',
-    zIndex: '10000',
-    background: '#222',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'box-shadow 0.3s ease'
-  });
-
-  saveBtn.addEventListener('click', async () => {
-    console.log('💾 Saving changes...');
-    console.log(`Total changes to save: ${changes.length}`);
-    
-    // Show preview of each change
-    changes.forEach((change, idx) => {
-      const preview = change.content.length > 200 
-        ? change.content.substring(0, 200) + '...'
-        : change.content;
-      console.log(`\nChange ${idx + 1}:`);
-      console.log(`  File: ${change.file}`);
-      console.log(`  Location: ${change.loc}`);
-      console.log(`  Tag: ${change.tagName}`);
-      console.log(`  Content preview: ${preview}`);
-    });
-    
-    // Show complete JSON payload
-    console.log('\n🚀 Complete JSON payload being sent:');
-    console.log(JSON.stringify(changes, null, 2));
-    
-    try {
-      const response = await fetch('http://localhost:3000/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(changes)
-      });
-
-      if (response.ok) {
-        console.log('✅ Changes saved successfully!');
-        alert('Changes saved!');
-        // Clear changes array after successful save
-        changes.length = 0;
-        updateSaveIndicator();
-      } else {
-        console.error('❌ Save failed:', response.status, response.statusText);
-        alert(`Save failed: ${response.status} ${response.statusText}`);
-      }
-    } catch (error) {
-      console.error('❌ Network error during save:', error);
-      alert(`Save failed: ${error.message}`);
-    }
-  });
-
-  document.body.appendChild(saveBtn);
+  // Create baseline on first load
+  createBaselineFromPage();
 });
 
 //Allow editing indentable lists by pressing TAB

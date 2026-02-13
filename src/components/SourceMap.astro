@@ -49,7 +49,7 @@ function findDynamicLocations(dir) {
 const dynamicLocations = findDynamicLocations(cwd());
 ---
 
-{isDev && <script is:inline src="/live-edit.js" />}
+{isDev && <script is:inline type="module" src="/live-edit.js" />}
 
 <script is:inline type="module" define:vars={{ cwd: cwd(), dynamicLocations }}>
     const dynamicSet = new Set(dynamicLocations);
