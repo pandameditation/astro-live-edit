@@ -384,6 +384,17 @@ app.post('/api/versions/baseline', (req, res) => {
   res.json(entry);
 });
 
+// Reset origin to latest git HEAD
+app.post('/api/versions/reset-origin', (req, res) => {
+  const { files } = req.body;
+  if (!Array.isArray(files) || files.length === 0) {
+    return res.status(400).json({ error: 'Expected { files: ["/abs/path/..."] }' });
+  }
+  const entry = versions.resetOrigin(files);
+  console.log(`🔄 Origin reset to git HEAD: ${entry.fileCount} files`);
+  res.json(entry);
+});
+
 // List all versions (lightweight)
 app.get('/api/versions', (_req, res) => {
   res.json(versions.listVersions());

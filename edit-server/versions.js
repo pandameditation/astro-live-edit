@@ -389,6 +389,33 @@ export function updateLabel(id, label) {
 }
 
 /**
+ * Reset origin to latest git HEAD.
+ * Wipes all versions, restores tracked files to git content, rebuilds origin from git.
+ */
+export function resetOrigin(filePaths) {
+  // Wipe everything including origin.json
+  if (fs.existsSync(VERSIONS_DIR)) {
+    fs.rmSync(VERSIONS_DIR, { recursive: true, force: true });
+  }
+  ensureVersionsDir();
+  writeManifest([]);
+
+  // Restore files on disk to git HEAD content
+  for (const filePath of filePaths) {
+    const fullPath = path.resolve(filePath);
+    const relPath = path.relative(process.cwd(), fullPath);
+    const gitContent = readFileFromGit(relPath);
+    if (gitContent !== null) {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, gitContent, 'utf-8');
+    }
+  }
+
+  // Recreate baseline from git
+  return createBaseline(filePaths);
+}
+
+/**
  * Restore files from a version snapshot back to their original locations.
  * Each version is a complete snapshot, so all tracked files are restored.
  * Sets checkpoint to the restored version (no backup snapshot created).

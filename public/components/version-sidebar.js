@@ -352,6 +352,19 @@ export function createVersionSidebar({ getChanges } = {}) {
           loadVersions();
         }
       }},
+      { text: '🔄 Reset to git HEAD', action: async () => {
+        if (confirm('Reset origin to latest git commit? All versions and unsaved changes will be lost.')) {
+          const files = getTrackedFiles();
+          if (files.length === 0) return;
+          await fetch(`${API_BASE}/api/versions/reset-origin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files }),
+          });
+          Object.keys(detailsCache).forEach(k => delete detailsCache[k]);
+          loadVersions();
+        }
+      }},
     ];
 
     for (const item of items) {
@@ -395,23 +408,29 @@ export function createVersionSidebar({ getChanges } = {}) {
 }
 
 /**
- * Create origin (v0) from files currently on the page.
- * Called once on page load.
+ * Collect all unique source files referenced on the current page.
  */
-export async function createBaselineFromPage() {
-  // Collect all unique source files referenced on this page
+function getTrackedFiles() {
   const files = new Set();
   document.querySelectorAll('[data-source-file]').forEach(el => {
     files.add(el.getAttribute('data-source-file'));
   });
+  return [...files];
+}
 
-  if (files.size === 0) return;
+/**
+ * Create origin (v0) from files currently on the page.
+ * Called once on page load.
+ */
+export async function createBaselineFromPage() {
+  const files = getTrackedFiles();
+  if (files.length === 0) return;
 
   try {
     await fetch(`${API_BASE}/api/versions/baseline`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: [...files] }),
+      body: JSON.stringify({ files }),
     });
   } catch (err) {
     console.warn('Failed to create origin:', err);
