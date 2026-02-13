@@ -84,18 +84,16 @@ function getStorageSize(dir = VERSIONS_DIR) {
 }
 
 /**
- * Create or refresh origin (v0) version from a list of file paths.
- * Always re-snapshots files so origin stays fresh across page navigations
- * and server restarts.
+ * Create origin (v0) version from a list of file paths.
+ * Origin is immutable — only created once. Subsequent calls are no-ops
+ * so that saves/restores don't overwrite the original snapshot.
  */
 export function createBaseline(filePaths) {
   const manifest = readManifest();
+  const existing = manifest.find(v => v.id === 0);
 
-  // Remove existing v0 snapshot directory if present
-  const v0Dir = path.join(VERSIONS_DIR, 'v0');
-  if (fs.existsSync(v0Dir)) {
-    fs.rmSync(v0Dir, { recursive: true, force: true });
-  }
+  // If origin already exists, return it unchanged
+  if (existing) return existing;
 
   const snapshotted = snapshotFiles(0, filePaths);
   const entry = {
@@ -106,19 +104,9 @@ export function createBaseline(filePaths) {
     fileCount: snapshotted.length
   };
 
-  // Replace or add v0 in manifest
-  const idx = manifest.findIndex(v => v.id === 0);
-  if (idx !== -1) {
-    manifest[idx] = entry;
-  } else {
-    manifest.push(entry);
-  }
+  manifest.push(entry);
   writeManifest(manifest);
-  // Origin is always the initial checkpoint; preserve existing checkpoint
-  // from saves/restores if one exists
-  if (readCheckpoint() === null) {
-    writeCheckpoint(0);
-  }
+  writeCheckpoint(0);
   return entry;
 }
 
@@ -205,13 +193,22 @@ export function getVersionDetails(id) {
   }
 
   // Diff against the checkpoint version
-  const refDir = checkpointId !== null
+  const checkpointVersion = checkpointId !== null
+    ? manifest.find(v => v.id === checkpointId)
+    : null;
+  const refDir = checkpointVersion
     ? path.join(VERSIONS_DIR, `v${checkpointId}`, 'files')
     : null;
 
+  // Use union of files from this version and the checkpoint
+  const allFiles = new Set(version.files);
+  if (checkpointVersion) {
+    for (const f of checkpointVersion.files) allFiles.add(f);
+  }
+
   // Compute diffs per file
   const diffs = [];
-  for (const relPath of version.files) {
+  for (const relPath of allFiles) {
     const currentPath = path.join(versionDir, relPath);
     const currentContent = fs.existsSync(currentPath)
       ? fs.readFileSync(currentPath, 'utf-8')
@@ -296,6 +293,8 @@ export function updateLabel(id, label) {
 
 /**
  * Restore files from a version snapshot back to their original locations.
+ * Also reverts any files that were changed in later versions but not in this one,
+ * by restoring them from the origin (v0) snapshot.
  * Sets checkpoint to the restored version (no backup snapshot created).
  */
 export function restoreVersion(id) {
@@ -306,14 +305,28 @@ export function restoreVersion(id) {
   const versionDir = path.join(VERSIONS_DIR, `v${id}`, 'files');
   if (!fs.existsSync(versionDir)) return null;
 
-  // Restore files from the snapshot
+  // Collect all files that any version has ever tracked
+  const allTrackedFiles = new Set();
+  for (const v of manifest) {
+    for (const f of v.files) allTrackedFiles.add(f);
+  }
+
   const restored = [];
-  for (const relPath of version.files) {
-    const srcPath = path.join(versionDir, relPath);
-    const destPath = path.resolve(relPath);
+  const versionFiles = new Set(version.files);
+
+  for (const relPath of allTrackedFiles) {
+    let srcPath;
+    if (versionFiles.has(relPath)) {
+      // File exists in target version — use it
+      srcPath = path.join(versionDir, relPath);
+    } else {
+      // File not in target version — fall back to origin (v0)
+      srcPath = path.join(VERSIONS_DIR, 'v0', 'files', relPath);
+    }
 
     if (!fs.existsSync(srcPath)) continue;
 
+    const destPath = path.resolve(relPath);
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
     fs.copyFileSync(srcPath, destPath);
     restored.push(relPath);
