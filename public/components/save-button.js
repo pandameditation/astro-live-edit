@@ -33,7 +33,8 @@ export function createSaveButton({ onSave, onToggleVersions }) {
 
   // Chevron button for version history
   const chevronBtn = document.createElement('button');
-  chevronBtn.textContent = '▾';
+  chevronBtn.textContent = '▸';
+  let panelOpen = false;
   Object.assign(chevronBtn.style, {
     padding: '10px 10px',
     background: '#333',
@@ -43,9 +44,15 @@ export function createSaveButton({ onSave, onToggleVersions }) {
     cursor: 'pointer',
     fontSize: '12px',
     fontFamily: 'inherit',
+    transition: 'transform 0.3s ease',
+    display: 'inline-block',
   });
   chevronBtn.title = 'Version history';
-  chevronBtn.addEventListener('click', onToggleVersions);
+  chevronBtn.addEventListener('click', () => {
+    panelOpen = !panelOpen;
+    chevronBtn.style.transform = panelOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+    onToggleVersions();
+  });
 
   container.appendChild(saveBtn);
   container.appendChild(chevronBtn);
