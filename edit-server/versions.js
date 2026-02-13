@@ -1,10 +1,12 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { diffLines } from './diff.js';
 
 const VERSIONS_DIR = path.resolve('edit-server', '.versions');
 const MANIFEST_PATH = path.join(VERSIONS_DIR, 'manifest.json');
 const CHECKPOINT_PATH = path.join(VERSIONS_DIR, 'checkpoint.json');
+const ORIGIN_PATH = path.join(VERSIONS_DIR, 'origin.json');
 const MAX_STORAGE_BYTES = 5 * 1024 * 1024; // 5MB limit
 
 // Ensure .versions directory exists
@@ -84,24 +86,103 @@ function getStorageSize(dir = VERSIONS_DIR) {
 }
 
 /**
+ * Try to read a file's content from the latest git commit.
+ * Returns null if git is unavailable or file is untracked.
+ */
+function readFileFromGit(relPath) {
+  try {
+    return execSync(`git show HEAD:${relPath}`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read stored origin data (survives deleteAllVersions).
+ */
+function readOriginData() {
+  if (!fs.existsSync(ORIGIN_PATH)) return null;
+  return JSON.parse(fs.readFileSync(ORIGIN_PATH, 'utf-8'));
+}
+
+/**
+ * Write origin data to persistent storage.
+ */
+function writeOriginData(data) {
+  ensureVersionsDir();
+  fs.writeFileSync(ORIGIN_PATH, JSON.stringify(data), 'utf-8');
+}
+
+/**
+ * Rebuild v0 snapshot directory from stored origin data.
+ */
+function rebuildOriginSnapshot(originData) {
+  const v0Dir = path.join(VERSIONS_DIR, 'v0', 'files');
+  fs.mkdirSync(v0Dir, { recursive: true });
+  for (const [relPath, content] of Object.entries(originData.contents)) {
+    const destPath = path.join(v0Dir, relPath);
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.writeFileSync(destPath, content, 'utf-8');
+  }
+}
+
+/**
  * Create origin (v0) version from a list of file paths.
- * Origin is immutable — only created once. Subsequent calls are no-ops
- * so that saves/restores don't overwrite the original snapshot.
+ * Uses git content when available, falls back to disk content.
+ * Origin data is stored persistently in origin.json and survives deleteAllVersions.
  */
 export function createBaseline(filePaths) {
   const manifest = readManifest();
   const existing = manifest.find(v => v.id === 0);
 
-  // If origin already exists, return it unchanged
-  if (existing) return existing;
+  // If origin already exists in manifest, ensure snapshot dir exists and return
+  if (existing) {
+    const v0Dir = path.join(VERSIONS_DIR, 'v0', 'files');
+    if (!fs.existsSync(v0Dir)) {
+      const originData = readOriginData();
+      if (originData) rebuildOriginSnapshot(originData);
+    }
+    return existing;
+  }
 
-  const snapshotted = snapshotFiles(0, filePaths);
+  // Capture origin content: git first, disk fallback
+  const contents = {};
+  const files = [];
+  for (const filePath of filePaths) {
+    const fullPath = path.resolve(filePath);
+    const relPath = path.relative(process.cwd(), fullPath);
+
+    const gitContent = readFileFromGit(relPath);
+    const content = gitContent !== null
+      ? gitContent
+      : (fs.existsSync(fullPath) ? fs.readFileSync(fullPath, 'utf-8') : null);
+
+    if (content === null) continue;
+    contents[relPath] = content;
+    files.push(relPath);
+  }
+
+  // Persist origin data (survives deleteAllVersions)
+  writeOriginData({ contents, timestamp: new Date().toISOString() });
+
+  // Write v0 snapshot directory
+  const v0Dir = path.join(VERSIONS_DIR, 'v0', 'files');
+  fs.mkdirSync(v0Dir, { recursive: true });
+  for (const [relPath, content] of Object.entries(contents)) {
+    const destPath = path.join(v0Dir, relPath);
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.writeFileSync(destPath, content, 'utf-8');
+  }
+
   const entry = {
     id: 0,
     timestamp: new Date().toISOString(),
     label: 'Origin',
-    files: snapshotted,
-    fileCount: snapshotted.length
+    files,
+    fileCount: files.length
   };
 
   manifest.push(entry);
@@ -239,9 +320,10 @@ export function getVersionDetails(id) {
 }
 
 /**
- * Delete a specific version.
+ * Delete a specific version. Cannot delete origin (v0).
  */
 export function deleteVersion(id) {
+  if (id === 0) return false; // Origin is immutable
   const manifest = readManifest();
   const idx = manifest.findIndex(v => v.id === id);
   if (idx === -1) return false;
@@ -265,15 +347,32 @@ export function deleteVersion(id) {
 }
 
 /**
- * Delete all versions.
+ * Delete all versions except origin (v0).
+ * Origin data in origin.json is always preserved.
  */
 export function deleteAllVersions() {
+  const originData = readOriginData();
+  const manifest = readManifest();
+  const originEntry = manifest.find(v => v.id === 0);
+
+  // Wipe the entire directory
   if (fs.existsSync(VERSIONS_DIR)) {
     fs.rmSync(VERSIONS_DIR, { recursive: true, force: true });
   }
   ensureVersionsDir();
-  writeManifest([]);
-  // Checkpoint is cleared since the directory was wiped
+
+  // Restore origin data file
+  if (originData) writeOriginData(originData);
+
+  // Rebuild v0 from stored origin data
+  if (originEntry && originData) {
+    rebuildOriginSnapshot(originData);
+    writeManifest([originEntry]);
+    writeCheckpoint(0);
+  } else {
+    writeManifest([]);
+  }
+
   return true;
 }
 

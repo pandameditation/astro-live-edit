@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   markIndentableLists();
 
   // Version sidebar
-  const versionSidebar = createVersionSidebar();
+  const versionSidebar = createVersionSidebar({ getChanges: () => changes });
 
   // Unsaved changes visual indicator on save button
   function updateSaveIndicator() {
@@ -92,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       changes.push({ file, loc, tagName, content });
     }
+    versionSidebar.updatePending();
 
     console.log('📦 Payload metadata:');
     console.log({ file, loc, tagName, contentLength: content.length });

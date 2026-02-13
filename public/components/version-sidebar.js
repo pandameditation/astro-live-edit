@@ -5,7 +5,7 @@ import { createVersionCard, renderDiffDetails } from './version-card.js';
 
 const API_BASE = 'http://localhost:3000';
 
-export function createVersionSidebar() {
+export function createVersionSidebar({ getChanges } = {}) {
   const sidebar = document.createElement('div');
   Object.assign(sidebar.style, {
     position: 'fixed',
@@ -93,6 +93,7 @@ export function createVersionSidebar() {
   let isOpen = false;
   // Cache of fetched version details
   const detailsCache = {};
+  let updatePendingRef = null;
 
   function show() {
     sidebar.style.right = '0';
@@ -141,35 +142,100 @@ export function createVersionSidebar() {
       });
       currentCard.addEventListener('mouseenter', () => { currentCard.style.background = '#2a3a4a'; });
       currentCard.addEventListener('mouseleave', () => { currentCard.style.background = '#1a2a3a'; });
-      currentCard.textContent = '✏️ Currently editing';
+
+      const currentLabel = document.createElement('span');
+      currentLabel.textContent = '✏️ Currently editing';
+      currentCard.appendChild(currentLabel);
+
+      // Pending changes summary
+      const pendingBadge = document.createElement('span');
+      Object.assign(pendingBadge.style, {
+        marginLeft: '8px',
+        background: '#68f',
+        color: '#fff',
+        padding: '1px 6px',
+        borderRadius: '8px',
+        fontSize: '10px',
+        fontWeight: 'bold',
+        display: 'none',
+      });
+      currentCard.appendChild(pendingBadge);
 
       const currentDiffContainer = document.createElement('div');
       currentDiffContainer.style.display = 'none';
       currentCard.appendChild(currentDiffContainer);
 
-      currentCard.addEventListener('click', async () => {
+      function updatePendingBadge() {
+        const changes = getChanges ? getChanges() : [];
+        if (changes.length === 0) {
+          pendingBadge.style.display = 'none';
+          return;
+        }
+        pendingBadge.textContent = `${changes.length} unsaved`;
+        pendingBadge.style.display = 'inline';
+      }
+      updatePendingRef = updatePendingBadge;
+      updatePendingBadge();
+
+      currentCard.addEventListener('click', () => {
         if (currentDiffContainer.style.display !== 'none') {
           currentDiffContainer.style.display = 'none';
           return;
         }
         currentDiffContainer.style.display = 'block';
-        currentDiffContainer.innerHTML = '<div style="color:#888;font-size:11px;padding:4px">Loading diffs...</div>';
-        try {
-          const res = await fetch(`${API_BASE}/api/versions/current-diff`);
-          const data = await res.json();
-          currentDiffContainer.innerHTML = '';
-          Object.assign(currentDiffContainer.style, {
-            marginTop: '8px',
-            borderTop: '1px solid #444',
-            paddingTop: '8px',
+        currentDiffContainer.innerHTML = '';
+        Object.assign(currentDiffContainer.style, {
+          marginTop: '8px',
+          borderTop: '1px solid #444',
+          paddingTop: '8px',
+        });
+
+        const changes = getChanges ? getChanges() : [];
+        if (changes.length === 0) {
+          currentDiffContainer.innerHTML = '<div style="color:#888;font-size:11px">No unsaved changes</div>';
+          return;
+        }
+
+        // Group by file
+        const byFile = {};
+        for (const c of changes) {
+          const name = c.file.split('/').pop();
+          if (!byFile[name]) byFile[name] = [];
+          byFile[name].push(c);
+        }
+
+        for (const [fileName, edits] of Object.entries(byFile)) {
+          const row = document.createElement('div');
+          Object.assign(row.style, {
+            padding: '4px 0',
+            fontSize: '12px',
           });
-          if (data.diffs.length === 0) {
-            currentDiffContainer.innerHTML = '<div style="color:#888;font-size:11px">No changes since last save</div>';
-            return;
+
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = fileName;
+          nameSpan.style.color = '#8cf';
+
+          const countSpan = document.createElement('span');
+          countSpan.textContent = ` ${edits.length} edit${edits.length !== 1 ? 's' : ''}`;
+          Object.assign(countSpan.style, { fontSize: '11px', color: '#999' });
+
+          row.appendChild(nameSpan);
+          row.appendChild(countSpan);
+          currentDiffContainer.appendChild(row);
+
+          // Show tag + preview for each edit
+          for (const edit of edits) {
+            const detail = document.createElement('div');
+            const preview = edit.content.replace(/<[^>]*>/g, '').substring(0, 60);
+            detail.textContent = `‹${edit.tagName}› ${preview}${edit.content.length > 60 ? '…' : ''}`;
+            Object.assign(detail.style, {
+              fontSize: '11px',
+              color: '#777',
+              paddingLeft: '8px',
+              lineHeight: '1.5',
+            });
+            currentDiffContainer.appendChild(detail);
           }
-          renderDiffDetails(currentDiffContainer, { diffs: data.diffs }, { onRestore: null, onDelete: null, isCheckpoint: false });
-        } catch (err) {
-          currentDiffContainer.innerHTML = `<div style="color:#c66;font-size:11px">Failed to load: ${err.message}</div>`;
         }
       });
 
@@ -324,6 +390,7 @@ export function createVersionSidebar() {
     hide,
     toggle,
     refresh: loadVersions,
+    updatePending: () => { if (typeof updatePendingRef === 'function') updatePendingRef(); },
   };
 }
 
