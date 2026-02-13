@@ -373,14 +373,14 @@ app.post('/save', (req, res) => {
 // Version History API
 // ============================
 
-// Create baseline (v0) from files currently rendered on page
+// Create origin (v0) from files currently rendered on page
 app.post('/api/versions/baseline', (req, res) => {
   const { files } = req.body;
   if (!Array.isArray(files) || files.length === 0) {
     return res.status(400).json({ error: 'Expected { files: ["/abs/path/..."] }' });
   }
   const entry = versions.createBaseline(files);
-  console.log(`📸 Baseline v0: ${entry.fileCount} files`);
+  console.log(`📸 Origin v0: ${entry.fileCount} files`);
   res.json(entry);
 });
 

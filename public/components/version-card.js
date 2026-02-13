@@ -2,15 +2,18 @@
 // Renders a single version entry with timestamp, label, file count,
 // and expandable diff detail.
 
-export function createVersionCard(version, { onRestore, onDelete, onRename, onToggleDiff }) {
+export function createVersionCard(version, { onRestore, onDelete, onRename, onToggleDiff, isCheckpoint }) {
   const card = document.createElement('div');
   card.dataset.versionId = version.id;
+
+  const bgColor = isCheckpoint ? '#2a2a1a' : (version.id === 0 ? '#1a2a1a' : '#2a2a2a');
+  const borderColor = isCheckpoint ? '#c90' : (version.id === 0 ? '#4a8' : '#666');
   Object.assign(card.style, {
     padding: '10px 12px',
     marginBottom: '8px',
-    background: version.id === 0 ? '#1a2a1a' : '#2a2a2a',
+    background: bgColor,
     borderRadius: '6px',
-    borderLeft: '3px solid ' + (version.id === 0 ? '#4a8' : '#666'),
+    borderLeft: `3px solid ${borderColor}`,
     cursor: 'pointer',
     transition: 'background 0.15s',
     fontSize: '13px',
@@ -18,9 +21,9 @@ export function createVersionCard(version, { onRestore, onDelete, onRename, onTo
   });
 
   card.addEventListener('mouseenter', () => { card.style.background = '#3a3a3a'; });
-  card.addEventListener('mouseleave', () => { card.style.background = version.id === 0 ? '#1a2a1a' : '#2a2a2a'; });
+  card.addEventListener('mouseleave', () => { card.style.background = bgColor; });
 
-  // Header row: version ID + timestamp
+  // Header row: version ID + checkpoint dot + timestamp
   const header = document.createElement('div');
   Object.assign(header.style, {
     display: 'flex',
@@ -28,6 +31,11 @@ export function createVersionCard(version, { onRestore, onDelete, onRename, onTo
     alignItems: 'center',
     marginBottom: '4px',
   });
+
+  const idRow = document.createElement('span');
+  idRow.style.display = 'flex';
+  idRow.style.alignItems = 'center';
+  idRow.style.gap = '6px';
 
   const idBadge = document.createElement('span');
   idBadge.textContent = `v${version.id}`;
@@ -39,6 +47,21 @@ export function createVersionCard(version, { onRestore, onDelete, onRename, onTo
     fontSize: '11px',
     fontWeight: 'bold',
   });
+  idRow.appendChild(idBadge);
+
+  if (isCheckpoint) {
+    const dot = document.createElement('span');
+    Object.assign(dot.style, {
+      width: '8px',
+      height: '8px',
+      borderRadius: '50%',
+      background: '#e0a800',
+      boxShadow: '0 0 6px 2px rgba(224, 168, 0, 0.6)',
+      display: 'inline-block',
+    });
+    dot.title = 'Checkpoint';
+    idRow.appendChild(dot);
+  }
 
   const time = document.createElement('span');
   const date = new Date(version.timestamp);
@@ -49,7 +72,7 @@ export function createVersionCard(version, { onRestore, onDelete, onRename, onTo
     color: '#999',
   });
 
-  header.appendChild(idBadge);
+  header.appendChild(idRow);
   header.appendChild(time);
   card.appendChild(header);
 
@@ -126,7 +149,7 @@ export function createVersionCard(version, { onRestore, onDelete, onRename, onTo
 /**
  * Render diff details into a container
  */
-export function renderDiffDetails(container, details, { onRestore, onDelete }) {
+export function renderDiffDetails(container, details, { onRestore, onDelete, isCheckpoint }) {
   container.innerHTML = '';
   Object.assign(container.style, {
     marginTop: '8px',
@@ -134,12 +157,26 @@ export function renderDiffDetails(container, details, { onRestore, onDelete }) {
     paddingTop: '8px',
   });
 
+  if (isCheckpoint) {
+    const badge = document.createElement('div');
+    badge.textContent = '📌 Checkpoint';
+    Object.assign(badge.style, {
+      color: '#e0a800',
+      fontSize: '11px',
+      fontWeight: 'bold',
+      marginBottom: '6px',
+    });
+    container.appendChild(badge);
+  }
+
   if (!details.diffs || details.diffs.length === 0) {
-    const noChanges = document.createElement('div');
-    noChanges.textContent = 'No changes in this version';
-    noChanges.style.color = '#888';
-    noChanges.style.fontSize = '11px';
-    container.appendChild(noChanges);
+    if (!isCheckpoint) {
+      const noChanges = document.createElement('div');
+      noChanges.textContent = 'No changes in this version';
+      noChanges.style.color = '#888';
+      noChanges.style.fontSize = '11px';
+      container.appendChild(noChanges);
+    }
     return;
   }
 

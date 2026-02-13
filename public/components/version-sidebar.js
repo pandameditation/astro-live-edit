@@ -120,7 +120,9 @@ export function createVersionSidebar() {
 
     try {
       const res = await fetch(`${API_BASE}/api/versions`);
-      const versionsList = await res.json();
+      const data = await res.json();
+      const versionsList = data.versions;
+      const checkpointId = data.checkpointId;
       cardList.innerHTML = '';
 
       // "Currently editing" card — always at top
@@ -165,7 +167,7 @@ export function createVersionSidebar() {
             currentDiffContainer.innerHTML = '<div style="color:#888;font-size:11px">No changes since last save</div>';
             return;
           }
-          renderDiffDetails(currentDiffContainer, { diffs: data.diffs }, { onRestore: null, onDelete: null });
+          renderDiffDetails(currentDiffContainer, { diffs: data.diffs }, { onRestore: null, onDelete: null, isCheckpoint: false });
         } catch (err) {
           currentDiffContainer.innerHTML = `<div style="color:#c66;font-size:11px">Failed to load: ${err.message}</div>`;
         }
@@ -190,7 +192,8 @@ export function createVersionSidebar() {
           onRestore: restoreVersion,
           onDelete: deleteAndReload,
           onRename: renameVersion,
-          onToggleDiff: loadDiffDetails,
+          onToggleDiff: (id, container) => loadDiffDetails(id, container, id === checkpointId),
+          isCheckpoint: version.id === checkpointId,
         });
         cardList.appendChild(card);
       }
@@ -204,10 +207,10 @@ export function createVersionSidebar() {
     }
   }
 
-  async function loadDiffDetails(id, container) {
+  async function loadDiffDetails(id, container, isCheckpoint = false) {
     // Check cache
     if (detailsCache[id]) {
-      renderDiffDetails(container, detailsCache[id], { onRestore: restoreVersion, onDelete: deleteAndReload });
+      renderDiffDetails(container, detailsCache[id], { onRestore: restoreVersion, onDelete: deleteAndReload, isCheckpoint });
       return;
     }
 
@@ -216,7 +219,7 @@ export function createVersionSidebar() {
       const res = await fetch(`${API_BASE}/api/versions/${id}`);
       const details = await res.json();
       detailsCache[id] = details;
-      renderDiffDetails(container, details, { onRestore: restoreVersion, onDelete: deleteAndReload });
+      renderDiffDetails(container, details, { onRestore: restoreVersion, onDelete: deleteAndReload, isCheckpoint });
     } catch (err) {
       container.innerHTML = `<div style="color:#c66;font-size:11px">Failed to load: ${err.message}</div>`;
     }
@@ -325,7 +328,7 @@ export function createVersionSidebar() {
 }
 
 /**
- * Create baseline (v0) from files currently on the page.
+ * Create origin (v0) from files currently on the page.
  * Called once on page load.
  */
 export async function createBaselineFromPage() {
@@ -344,6 +347,6 @@ export async function createBaselineFromPage() {
       body: JSON.stringify({ files: [...files] }),
     });
   } catch (err) {
-    console.warn('Failed to create baseline:', err);
+    console.warn('Failed to create origin:', err);
   }
 }

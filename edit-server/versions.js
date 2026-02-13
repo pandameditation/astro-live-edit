@@ -4,6 +4,7 @@ import { diffLines } from './diff.js';
 
 const VERSIONS_DIR = path.resolve('edit-server', '.versions');
 const MANIFEST_PATH = path.join(VERSIONS_DIR, 'manifest.json');
+const CHECKPOINT_PATH = path.join(VERSIONS_DIR, 'checkpoint.json');
 const MAX_STORAGE_BYTES = 5 * 1024 * 1024; // 5MB limit
 
 // Ensure .versions directory exists
@@ -24,6 +25,19 @@ function readManifest() {
 function writeManifest(manifest) {
   ensureVersionsDir();
   fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf-8');
+}
+
+// Read checkpoint (version ID used as reference for "Currently editing" diff)
+function readCheckpoint() {
+  ensureVersionsDir();
+  if (!fs.existsSync(CHECKPOINT_PATH)) return null;
+  return JSON.parse(fs.readFileSync(CHECKPOINT_PATH, 'utf-8')).id;
+}
+
+// Write checkpoint
+function writeCheckpoint(id) {
+  ensureVersionsDir();
+  fs.writeFileSync(CHECKPOINT_PATH, JSON.stringify({ id }), 'utf-8');
 }
 
 // Get next version ID
@@ -70,8 +84,8 @@ function getStorageSize(dir = VERSIONS_DIR) {
 }
 
 /**
- * Create or refresh baseline (v0) version from a list of file paths.
- * Always re-snapshots files so baseline stays fresh across page navigations
+ * Create or refresh origin (v0) version from a list of file paths.
+ * Always re-snapshots files so origin stays fresh across page navigations
  * and server restarts.
  */
 export function createBaseline(filePaths) {
@@ -87,7 +101,7 @@ export function createBaseline(filePaths) {
   const entry = {
     id: 0,
     timestamp: new Date().toISOString(),
-    label: 'Baseline',
+    label: 'Origin',
     files: snapshotted,
     fileCount: snapshotted.length
   };
@@ -100,11 +114,16 @@ export function createBaseline(filePaths) {
     manifest.push(entry);
   }
   writeManifest(manifest);
+  // Only set checkpoint to origin if no checkpoint exists yet
+  if (readCheckpoint() === null) {
+    writeCheckpoint(0);
+  }
   return entry;
 }
 
 /**
  * Create a new version snapshot after a save.
+ * Sets checkpoint to this version.
  * @param {string[]} changedFiles - absolute paths of files that were just saved
  * @returns {object} the new version entry
  */
@@ -148,6 +167,7 @@ export function createVersion(changedFiles) {
 
   manifest.push(entry);
   writeManifest(manifest);
+  writeCheckpoint(id);
 
   // Check storage limit
   const size = getStorageSize();
@@ -162,7 +182,7 @@ export function createVersion(changedFiles) {
  * List all versions (lightweight — no diffs).
  */
 export function listVersions() {
-  return readManifest();
+  return { versions: readManifest(), checkpointId: readCheckpoint() };
 }
 
 /**
@@ -202,7 +222,7 @@ export function getVersionDetails(id) {
 
     const diff = diffLines(oldContent, currentContent);
 
-    // Only include files that actually have changes (or this is baseline)
+    // Only include files that actually have changes (or this is origin)
     if (diff.hunks.length > 0 || id === 0) {
       diffs.push({
         file: relPath,
@@ -235,6 +255,13 @@ export function deleteVersion(id) {
 
   manifest.splice(idx, 1);
   writeManifest(manifest);
+
+  // If we deleted the checkpoint, fall back to latest remaining version
+  if (readCheckpoint() === id) {
+    const sorted = [...manifest].sort((a, b) => a.id - b.id);
+    writeCheckpoint(sorted.length > 0 ? sorted[sorted.length - 1].id : null);
+  }
+
   return true;
 }
 
@@ -247,6 +274,7 @@ export function deleteAllVersions() {
   }
   ensureVersionsDir();
   writeManifest([]);
+  // Checkpoint is cleared since the directory was wiped
   return true;
 }
 
@@ -264,8 +292,7 @@ export function updateLabel(id, label) {
 
 /**
  * Restore files from a version snapshot back to their original locations.
- * Creates a new version (capturing current state) before restoring,
- * unless current state is identical to the previous version.
+ * Sets checkpoint to the restored version (no backup snapshot created).
  */
 export function restoreVersion(id) {
   const manifest = readManifest();
@@ -274,22 +301,6 @@ export function restoreVersion(id) {
 
   const versionDir = path.join(VERSIONS_DIR, `v${id}`, 'files');
   if (!fs.existsSync(versionDir)) return null;
-
-  // Snapshot current state of the files we're about to overwrite
-  const currentFiles = version.files.map(f => path.resolve(f));
-  const backupVersion = createVersion(currentFiles);
-  let backupVersionId = null;
-
-  if (backupVersion) {
-    backupVersion.label = `Before restore to v${id}`;
-    const updatedManifest = readManifest();
-    const backupIdx = updatedManifest.findIndex(v => v.id === backupVersion.id);
-    if (backupIdx !== -1) {
-      updatedManifest[backupIdx].label = backupVersion.label;
-      writeManifest(updatedManifest);
-    }
-    backupVersionId = backupVersion.id;
-  }
 
   // Restore files from the snapshot
   const restored = [];
@@ -304,29 +315,33 @@ export function restoreVersion(id) {
     restored.push(relPath);
   }
 
-  return {
-    restored,
-    backupVersionId
-  };
+  // Set checkpoint to the restored version
+  writeCheckpoint(id);
+
+  return { restored };
 }
 
 /**
- * Get diff of current live files on disk vs the latest version snapshot.
- * Used by the "Currently editing" card to show unsaved changes.
+ * Get diff of current live files on disk vs the checkpoint version.
+ * Checkpoint = latest save or latest restore (whichever happened most recently).
  */
 export function getCurrentDiff() {
   const manifest = readManifest();
   if (manifest.length === 0) return { comparedTo: null, diffs: [] };
 
-  const sorted = [...manifest].sort((a, b) => a.id - b.id);
-  const latest = sorted[sorted.length - 1];
-  const latestDir = path.join(VERSIONS_DIR, `v${latest.id}`, 'files');
+  const checkpointId = readCheckpoint();
+  const checkpoint = checkpointId !== null
+    ? manifest.find(v => v.id === checkpointId)
+    : null;
 
-  if (!fs.existsSync(latestDir)) return { comparedTo: latest.id, diffs: [] };
+  if (!checkpoint) return { comparedTo: null, diffs: [] };
+
+  const checkpointDir = path.join(VERSIONS_DIR, `v${checkpoint.id}`, 'files');
+  if (!fs.existsSync(checkpointDir)) return { comparedTo: checkpoint.id, diffs: [] };
 
   const diffs = [];
-  for (const relPath of latest.files) {
-    const snapshotPath = path.join(latestDir, relPath);
+  for (const relPath of checkpoint.files) {
+    const snapshotPath = path.join(checkpointDir, relPath);
     const livePath = path.resolve(relPath);
 
     const snapshotContent = fs.existsSync(snapshotPath)
@@ -346,5 +361,5 @@ export function getCurrentDiff() {
     }
   }
 
-  return { comparedTo: latest.id, diffs };
+  return { comparedTo: checkpoint.id, diffs };
 }

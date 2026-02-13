@@ -8,6 +8,22 @@
 
 ---
 
+## New philosophy
+The way new restore points are created ATM is very confusing for the users. We propose a refactoring to improve the UX.
+1. When the user saves, it creates a new snapshot that can be restored.
+2. When the user restores from a snapshot, we don't want to save a new snapshot "Before restore to vX". We are OK with losing those transient changes.
+3. This way, this is easier to reason about what versions are in the version history, because there are way less versions.
+4. There is no "Baseline" version: this is now "Origin" version.
+5. There is a new way to track diff: the "Currently editing" shows the diff with the latest "Checkpoint". The checkpoint is the latest saved version, or (if this happened) the latest restored version. There can be only one checkpoint (the most recent event between last save and last restore) that acts as the reference for the diff calculation.
+6. When we restore from a version successfully, it displays text in the card: "No changes
+  in this version". Instead it should display: "Checkpoint" and the card should have a yellow
+  background and border to highlight that. Also a little glowing yellow dot indicator next to
+  the "vX" label should show that it is the checkpoint.
+7. The "Checkpoint" version should be recomputed after save or restore action takes place. The checkpoint id should be the latest saved version, or the latest restored version.
+
+---
+
+
 ## Progress & Commits
 
 - ✅ Experiment started, feature moved to PROGRESS
