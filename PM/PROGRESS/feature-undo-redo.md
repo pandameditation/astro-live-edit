@@ -20,6 +20,13 @@ The way new restore points are created ATM is very confusing for the users. We p
   background and border to highlight that. Also a little glowing yellow dot indicator next to
   the "vX" label should show that it is the checkpoint.
 7. The "Checkpoint" version should be recomputed after save or restore action takes place. The checkpoint id should be the latest saved version, or the latest restored version.
+8. It doesn't make any sense to restore the current checkpoint (we are already on it). It doesn't
+  make sense to delete the checkpoint either. Also, there should be no diff on the checkpoint
+  (we are comparing each version to the checkpoint, so no diff here). Also, the origin should
+  not show any diff when it is created, since it should also be the checkpoint at creation time.
+  Please remove the checkpoint restore and delete buttons, make sure the diff are checked
+  against the checkpoint, and make sure the origin is the original checkpoint when we start
+  creating versions.
 
 ---
 

@@ -114,7 +114,8 @@ export function createBaseline(filePaths) {
     manifest.push(entry);
   }
   writeManifest(manifest);
-  // Only set checkpoint to origin if no checkpoint exists yet
+  // Origin is always the initial checkpoint; preserve existing checkpoint
+  // from saves/restores if one exists
   if (readCheckpoint() === null) {
     writeCheckpoint(0);
   }
@@ -186,7 +187,8 @@ export function listVersions() {
 }
 
 /**
- * Get version details including file-by-file diffs against previous version.
+ * Get version details including file-by-file diffs against the checkpoint.
+ * The checkpoint version itself will naturally show no diffs.
  */
 export function getVersionDetails(id) {
   const manifest = readManifest();
@@ -196,12 +198,15 @@ export function getVersionDetails(id) {
   const versionDir = path.join(VERSIONS_DIR, `v${id}`, 'files');
   if (!fs.existsSync(versionDir)) return null;
 
-  // Find previous version for diffing
-  const sorted = [...manifest].sort((a, b) => a.id - b.id);
-  const idx = sorted.findIndex(v => v.id === id);
-  const prevVersion = idx > 0 ? sorted[idx - 1] : null;
-  const prevDir = prevVersion
-    ? path.join(VERSIONS_DIR, `v${prevVersion.id}`, 'files')
+  // Checkpoint version has no diffs (it's the reference point)
+  const checkpointId = readCheckpoint();
+  if (checkpointId === id) {
+    return { ...version, diffs: [], storageSize: getStorageSize() };
+  }
+
+  // Diff against the checkpoint version
+  const refDir = checkpointId !== null
+    ? path.join(VERSIONS_DIR, `v${checkpointId}`, 'files')
     : null;
 
   // Compute diffs per file
@@ -212,18 +217,17 @@ export function getVersionDetails(id) {
       ? fs.readFileSync(currentPath, 'utf-8')
       : '';
 
-    let oldContent = '';
-    if (prevDir) {
-      const prevPath = path.join(prevDir, relPath);
-      if (fs.existsSync(prevPath)) {
-        oldContent = fs.readFileSync(prevPath, 'utf-8');
+    let refContent = '';
+    if (refDir) {
+      const refPath = path.join(refDir, relPath);
+      if (fs.existsSync(refPath)) {
+        refContent = fs.readFileSync(refPath, 'utf-8');
       }
     }
 
-    const diff = diffLines(oldContent, currentContent);
+    const diff = diffLines(refContent, currentContent);
 
-    // Only include files that actually have changes (or this is origin)
-    if (diff.hunks.length > 0 || id === 0) {
+    if (diff.hunks.length > 0) {
       diffs.push({
         file: relPath,
         stats: diff.stats,

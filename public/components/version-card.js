@@ -250,8 +250,8 @@ export function renderDiffDetails(container, details, { onRestore, onDelete, isC
     container.appendChild(diffLines);
   }
 
-  // Action buttons row (skip when handlers are null — e.g. "Currently editing" card)
-  if (onRestore || onDelete) {
+  // Action buttons row (skip for checkpoint and when handlers are null)
+  if ((onRestore || onDelete) && !isCheckpoint) {
     const actionsRow = document.createElement('div');
     Object.assign(actionsRow.style, {
       display: 'flex',
