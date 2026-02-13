@@ -225,9 +225,8 @@ export function createVersionSidebar() {
   async function restoreVersion(id) {
     try {
       await fetch(`${API_BASE}/api/versions/${id}/restore`, { method: 'POST' });
-      // Clear cache and reload
+      // Clear cache — Vite HMR will detect the restored files and full-reload the page
       Object.keys(detailsCache).forEach(k => delete detailsCache[k]);
-      window.location.reload();
     } catch (err) {
       console.error(`Restore failed: ${err.message}`);
     }
